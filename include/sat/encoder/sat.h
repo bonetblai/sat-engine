@@ -37,14 +37,14 @@ std::string bit_string(int k) {
     return std::bitset<8>(k).to_string();
 }
 
-class Variable {
+class Var {
   protected:
     int index_;
     std::string str_;
 
   public:
-    Variable(int index, const std::string &str) : index_(index), str_(str) { }
-    virtual ~Variable() { }
+    Var(int index, const std::string &str) : index_(index), str_(str) { }
+    virtual ~Var() { }
     int index() const { return index_; }
     std::string str() const { return str_; }
     void print(std::ostream &os) const {
@@ -54,18 +54,18 @@ class Variable {
 
 class Literal {
   protected:
-    const Variable &var_;
+    const Var &var_;
     bool sign_;
 
   public:
-    Literal(const Variable &var, bool sign)
+    Literal(const Var &var, bool sign)
       : var_(var), sign_(sign) {
     }
     Literal(const Literal &L, bool negate = false)
       : var_(L.var()), sign_(negate ? !L.sign() : L.sign()) {
     }
     virtual ~Literal() { }
-    const Variable& var() const { return var_; }
+    const Var& var() const { return var_; }
     bool sign() const { return sign_; }
     int var_index() const { return var_.index(); }
     int as_int() const { return !sign_ ? var_index() : -var_index(); }
