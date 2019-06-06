@@ -111,7 +111,14 @@ class Theory {
     }
 
     // default virtual function to decode model
+    void decode_model_full(std::ostream &os) const {
+        for( int var = 0; var < num_variables(); ++var ) {
+            if( model_[var] )
+                os << get_literal_by_index(1 + var) << std::endl;
+        }
+    }
     virtual void decode_model(std::ostream &os) const {
+        decode_model_full(os);
     }
 
     const Var& variable(int index) const {
@@ -201,8 +208,8 @@ class Theory {
     // support for pseudo boolean constraints
     void build_2_comparator(const std::string &prefix, int x1, int y1, std::vector<int> &z) { // z1 = max(x1,y1), z2 = min(x1,y1)
         // create new vars z1 and z2
-        int z1 = new_literal(prefix + "_z1");
-        int z2 = new_literal(prefix + "_z2");
+        int z1 = new_literal(std::string("_") + prefix + "_z1");
+        int z2 = new_literal(std::string("_") + prefix + "_z2");
         z.push_back(z1);
         z.push_back(z2);
 
@@ -294,7 +301,7 @@ class Theory {
         std::vector<int> x(variables);
         while( int(x.size()) < n ) {
             // pad one var
-            int index = new_literal(prefix + "_pad_var" + std::to_string(x.size()));
+            int index = new_literal(std::string("_") + prefix + "_pad_var" + std::to_string(x.size()));
             Implication *IP = new Implication;
             IP->add_consequent(-(1 + index));
             add_implication(IP);
