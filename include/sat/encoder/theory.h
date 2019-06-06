@@ -445,10 +445,9 @@ class Theory {
                 assert(var == int(i));
                 model_.at(var) = lit > 0;
             }
-            if( lit != 0 ) {
-                is >> lit;
-                assert(lit == 0);
-            }
+            // when decoding models, auxiliary variables may not be generated
+            // since the formulas are not built. Such variables are created
+            // when handling boolean constraints
         } else {
             model_.clear();
         }
