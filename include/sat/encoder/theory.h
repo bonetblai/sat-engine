@@ -22,7 +22,10 @@
 #include <cassert>
 #include <iostream>
 #include <fstream>
+#include <map>
 #include <set>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <sat/encoder/sat.h>
@@ -37,6 +40,7 @@ class Theory {
     std::vector<const Var*> variables_;
     std::vector<const Literal*> pos_literals_;
     std::vector<const Literal*> neg_literals_;
+    std::map<std::string, int> varmap_;
 
     std::vector<std::pair<int, const std::string> > comments_;
     std::vector<const Implication*> implications_;
@@ -71,8 +75,44 @@ class Theory {
         clear_variables();
     }
 
-    // unimplemented virtual function to decode model
-    virtual void decode_model(std::ostream &os) const = 0;
+    // get index of atom by name
+    int get_atom_by_name(const std::string &literal) const {
+        std::map<std::string, int>::const_iterator it = varmap_.find(literal[0] == '-' ? literal.substr(1) : literal);
+        return it == varmap_.end() ? -1 : it->second;
+    }
+
+    // get literal name (string) by literal index
+    std::string get_literal_by_index(int literal) const {
+        int index = literal > 0 ? literal - 1 : -literal - 1;
+        const Literal *l = literal > 0 ? pos_literals_.at(index) : neg_literals_.at(index);
+        assert(l != nullptr);
+        return l->as_str();
+    }
+
+    // default virtual function to read (partial) model from text file
+    virtual int read_symbolic_model(std::istream &is) {
+        int num_added_units = 0;
+        std::string line;
+        while( std::getline(is, line) ) {
+            //std::cout << "line=|" << line << "|" << std::flush;
+            if( line.empty() || (line[0] == '#') ) continue;
+            bool negated = line[0] == '-';
+            int atom = get_atom_by_name(line);
+            if( atom == -1 ) throw std::runtime_error(std::string("inexistent atom '") + line + "'");
+            int literal = negated ? -(1 + atom) : (1 + atom);
+            //std::cout << ", atom=" << atom << ", literal=|" << get_literal_by_index(literal) << "|" << std::endl;
+            //assert(line == get_literal_by_index(literal));
+            Implication *IP = new Implication;
+            IP->add_consequent(literal);
+            add_implication(IP);
+            ++num_added_units;
+        }
+        return num_added_units;
+    }
+
+    // default virtual function to decode model
+    virtual void decode_model(std::ostream &os) const {
+    }
 
     const Var& variable(int index) const {
         assert((0 <= index) && (index < int(variables_.size())));
@@ -137,6 +177,8 @@ class Theory {
     int new_variable(const std::string &name) {
         int index = variables_.size();
         variables_.push_back(new Var(index, name));
+        varmap_.emplace(name, index);
+        if( varmap_.size() < 10 ) std::cout << "new var: " << name << " " << index << " " << varmap_.size() << std::endl;
         return index;
     }
     int new_literal(const std::string &name) {
@@ -488,32 +530,60 @@ class VarSet {
         multipliers_.push_back(first.size());
     }
 
-    template<typename T, typename ...Ts>
-    void create_vars_helper2(SAT::Theory &theory,
-                             std::vector<int> &tuple,
-                             const T &first,
-                             const Ts... args) {
+    template<typename Func, typename T, typename ...Ts>
+    void enumerate_vars_helper2(std::vector<int> &tuple,
+                                Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
+                                const T &first,
+                                const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         for( size_t i = 0; i < first.size(); ++i ) {
             tuple.push_back(first[i]);
-            create_vars_helper(theory, tuple, args...);
+            enumerate_vars_helper(tuple, foo, args...);
             tuple.pop_back();
         }
     }
 
-    template<typename ...Ts>
-    void create_vars_helper(SAT::Theory &theory,
-                            std::vector<int> &tuple,
-                            const Ts... args) {
+    template<typename Func, typename ...Ts>
+    void enumerate_vars_helper(std::vector<int> &tuple,
+                               Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
+                               const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
-        create_vars_helper2(theory, tuple, args...);
+        enumerate_vars_helper2(tuple, foo, args...);
+    }
+
+    template<typename Func>
+    void enumerate_vars_helper(std::vector<int> &tuple,
+                               Func foo) const { //void foo(const VarSet &varset, const std::vector<int> &tuple)) const {
+        //std::cout << __PRETTY_FUNCTION__ << std::endl;
+#if 0 // DEPRECATED
+        std::string name = varname(tuple);
+        int var_index = theory.new_variable(name);
+        if( verbose_ > 1 ) {
+            std::cout << "create_var:"
+                      << " name=" << name
+                      << ", index=" << var_index
+                      << std::endl;
+        }
+        assert(var_index == (*this)(tuple));
+#endif
+        foo(*this, tuple);
     }
 
     template<typename ...Ts>
-    void create_vars(SAT::Theory &theory, const Ts... args) {
+    void create_vars(SAT::Theory &theory, const Ts... args) const {
         theory.push_new_vartype(varname_);
-        std::vector<int> tuple;
-        create_vars_helper(theory, tuple, args...);
+        auto foo = [&theory](const VarSet &varset, const std::vector<int> &tuple) -> void {
+            std::string name = varset.varname(tuple);
+            int var_index = theory.new_variable(name);
+            if( varset.verbose() > 1 ) {
+                std::cout << "create_var:"
+                          << " name=" << name
+                          << ", index=" << var_index
+                          << std::endl;
+            }
+            assert(var_index == varset(tuple));
+        };
+        enumerate_vars(foo, args...);
         if( verbose_ > 0 ) {
             std::cout << varname_
                       << ": #variables=" << theory.num_variables_in_last_block()
@@ -530,6 +600,32 @@ class VarSet {
         return calculate_index(1 + i, new_index, args...);
     }
     
+    int calculate_index(int i, int index) const {
+        //std::cout << __PRETTY_FUNCTION__ << std::endl;
+        assert(i == int(multipliers_.size()));
+        return index;
+    }
+
+    template<typename ...Ts> int calculate_index(int i, int index, Ts... args) const {
+        //std::cout << __PRETTY_FUNCTION__ << std::endl;
+        return calculate_index_helper(i, index, args...);
+    }
+
+    template<typename Func>
+    void enumerate_vars_from_multipliers(std::vector<int> &tuple,
+                                         Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
+                                         int index) const {
+        if( index < int(multipliers_.size()) ) {
+            for( size_t i = 0; i < multipliers_.at(index); ++i ) {
+                tuple.push_back(i);
+                enumerate_vars_from_multipliers(tuple, foo, 1 + index);
+                tuple.pop_back();
+            }
+        } else {
+            foo(*this, tuple);
+        }
+    }
+
   public:
     VarSet(int verbose = 1) : initialized_(false), verbose_(verbose) { }
     virtual ~VarSet() = default;
@@ -539,6 +635,16 @@ class VarSet {
     }
     const std::string& varname() const {
         return varname_;
+    }
+    std::string varname(const std::vector<int> &tuple) const {
+        std::string name(varname_);
+        if( !tuple.empty() ) name += "(";
+        for( size_t i = 0; i < tuple.size(); ++i ) {
+            if( i > 0 ) name += ",";
+            name += std::to_string(tuple[i]);
+        }
+        if( !tuple.empty() ) name += ")";
+        return name;
     }
     const std::vector<int>& multipliers() const {
         return multipliers_;
@@ -559,10 +665,21 @@ class VarSet {
         initialized_ = true;
     }
 
-    template<typename ...Ts> int calculate_index(int i, int index, Ts... args) const {
-        //std::cout << __PRETTY_FUNCTION__ << std::endl;
-        return calculate_index_helper(i, index, args...);
+    template<typename Func, typename ...Ts>
+    void enumerate_vars(Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
+                        const Ts... args) const {
+        std::vector<int> tuple;
+        enumerate_vars_helper(tuple, foo, args...);
+        assert(tuple.empty());
     }
+
+    template<typename Func>
+    void enumerate_vars_from_multipliers(Func foo) const {
+        std::vector<int> tuple;
+        enumerate_vars_from_multipliers(tuple, foo, 0);
+        assert(tuple.empty());
+    }
+
     template<typename ...Ts> int operator()(Ts... args) const {
         return base_ + calculate_index(0, 0, args...);
     }
@@ -576,19 +693,27 @@ class VarSet {
         }
         return base_ + index;
     }
+
+    void print(std::ostream &os, const std::vector<bool> &model, bool print_negative_literals = false) const {
+        auto foo = [&os, model, print_negative_literals](const VarSet &varset, const std::vector<int> &tuple) -> void {
+            int index = varset(tuple);
+            if( model.at(index) )
+                os << varset.varname(tuple) << std::endl;
+            else if( print_negative_literals )
+                os << "-" << varset.varname(tuple) << std::endl;
+        };
+        enumerate_vars_from_multipliers(foo);
+    }
 };
 
+#if 0 // DEPRECATED
 template<>
-inline void VarSet::create_vars_helper(SAT::Theory &theory, std::vector<int> &tuple) {
+inline void VarSet::enumerate_vars(SAT::Theory &theory,
+                                   std::vector<int> &tuple,
+                                   void foo(SAT::Theory &theory, const VarSet &varset, const std::vector<int> &tuple)) const {
     //std::cout << __PRETTY_FUNCTION__ << std::endl;
-    std::string name(varname_);
-    if( !tuple.empty() ) name += "(";
-    for( size_t i = 0; i < tuple.size(); ++i ) {
-        if( i > 0 ) name += ",";
-        name += std::to_string(tuple[i]);
-    }
-    if( !tuple.empty() ) name += ")";
-
+#if 0 // DEPRECATED
+    std::string name = varname(tuple);
     int var_index = theory.new_variable(name);
     if( verbose_ > 1 ) {
         std::cout << "create_var:"
@@ -597,6 +722,8 @@ inline void VarSet::create_vars_helper(SAT::Theory &theory, std::vector<int> &tu
                   << std::endl;
     }
     assert(var_index == (*this)(tuple));
+#endif
+    foo(theory, *this, tuple);
 }
 
 template<>
@@ -605,6 +732,7 @@ inline int VarSet::calculate_index(int i, int index) const {
     assert(i == int(multipliers_.size()));
     return index;
 }
+#endif
 
 }; // namespace SAT
 
