@@ -61,10 +61,12 @@ class Theory {
         std::cout << "---------------- variables + literals ---------------" << std::endl;
         build_variables();
         build_literals();
-        std::cout << "----------------- base implications -----------------" << std::endl;
-        build_base();
-        build_rest();
-        std::cout << "-----------------------------------------------------" << std::endl;
+        if( !decode_ ) {
+            std::cout << "----------------- base implications -----------------" << std::endl;
+            build_base();
+            build_rest();
+            std::cout << "-----------------------------------------------------" << std::endl;
+        }
     }
 
   public:
