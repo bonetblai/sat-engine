@@ -94,13 +94,11 @@ class Theory {
         int num_added_units = 0;
         std::string line;
         while( std::getline(is, line) ) {
-            //std::cout << "line=|" << line << "|" << std::flush;
             if( line.empty() || (line[0] == '#') ) continue;
             bool negated = line[0] == '-';
             int atom = get_atom_by_name(line);
             if( atom == -1 ) throw std::runtime_error(std::string("inexistent atom '") + line + "'");
             int literal = negated ? -(1 + atom) : (1 + atom);
-            //std::cout << ", atom=" << atom << ", literal=|" << get_literal_by_index(literal) << "|" << std::endl;
             //assert(line == get_literal_by_index(literal));
             Implication *IP = new Implication;
             IP->add_consequent(literal);
@@ -185,7 +183,6 @@ class Theory {
         int index = variables_.size();
         variables_.push_back(new Var(index, name));
         varmap_.emplace(name, index);
-        if( varmap_.size() < 10 ) std::cout << "new var: " << name << " " << index << " " << varmap_.size() << std::endl;
         return index;
     }
     int new_literal(const std::string &name) {
@@ -327,10 +324,8 @@ class Theory {
         }
 
         // check that we have not already issued these constraints
-        if( (prefix != "") && (at_most_k_constraints_.find(prefix) != at_most_k_constraints_.end()) ) {
-            std::cout << "error: at-most-k constraints for '" << prefix << "' already emited!" << std::endl;
-            exit(0);
-        }
+        if( (prefix != "") && (at_most_k_constraints_.find(prefix) != at_most_k_constraints_.end()) )
+            throw std::runtime_error(std::string("error: at-most-k constraints for '") + prefix + "' already emited!");
 
 #if 0
         // provisional, direct encoding
@@ -385,10 +380,8 @@ class Theory {
         }
 
         // check that we have not already issued these constraints
-        if( (prefix != "") && (at_least_k_constraints_.find(prefix) != at_least_k_constraints_.end()) ) {
-            std::cout << "error: at-least-k constraints for '" << prefix << "' already emited!" << std::endl;
-            exit(0);
-        }
+        if( (prefix != "") && (at_least_k_constraints_.find(prefix) != at_least_k_constraints_.end()) )
+            throw std::runtime_error(std::string("error: at-least-k constraints for '") + prefix + "' already emited!");
 
         // issue constraints, handling special cases
         if( k == 1 ) {
@@ -420,10 +413,8 @@ class Theory {
         }
 
         // check that we have not already issued these constraints
-        if( (prefix != "") && (equal_k_constraints_.find(prefix) != equal_k_constraints_.end()) ) {
-            std::cout << "error: equal-k constraints for '" << prefix << "' already emited!" << std::endl;
-            exit(0);
-        }
+        if( (prefix != "") && (equal_k_constraints_.find(prefix) != equal_k_constraints_.end()) )
+            throw std::runtime_error(std::string("error: equal-k constraints for '") + prefix + "' already emited!");
 
         std::vector<int> z;
         pad_and_build_sorting_network(prefix, variables, z);
@@ -538,10 +529,7 @@ class VarSet {
     }
 
     template<typename Func, typename T, typename ...Ts>
-    void enumerate_vars_helper2(std::vector<int> &tuple,
-                                Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
-                                const T &first,
-                                const Ts... args) const {
+    void enumerate_vars_helper2(std::vector<int> &tuple, Func foo, const T &first, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         for( size_t i = 0; i < first.size(); ++i ) {
             tuple.push_back(first[i]);
@@ -551,28 +539,14 @@ class VarSet {
     }
 
     template<typename Func, typename ...Ts>
-    void enumerate_vars_helper(std::vector<int> &tuple,
-                               Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
-                               const Ts... args) const {
+    void enumerate_vars_helper(std::vector<int> &tuple, Func foo, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         enumerate_vars_helper2(tuple, foo, args...);
     }
 
     template<typename Func>
-    void enumerate_vars_helper(std::vector<int> &tuple,
-                               Func foo) const { //void foo(const VarSet &varset, const std::vector<int> &tuple)) const {
+    void enumerate_vars_helper(std::vector<int> &tuple, Func foo) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
-#if 0 // DEPRECATED
-        std::string name = varname(tuple);
-        int var_index = theory.new_variable(name);
-        if( verbose_ > 1 ) {
-            std::cout << "create_var:"
-                      << " name=" << name
-                      << ", index=" << var_index
-                      << std::endl;
-        }
-        assert(var_index == (*this)(tuple));
-#endif
         foo(*this, tuple);
     }
 
@@ -619,9 +593,7 @@ class VarSet {
     }
 
     template<typename Func>
-    void enumerate_vars_from_multipliers(std::vector<int> &tuple,
-                                         Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
-                                         int index) const {
+    void enumerate_vars_from_multipliers(std::vector<int> &tuple, Func foo, int index) const {
         if( index < int(multipliers_.size()) ) {
             for( size_t i = 0; i < multipliers_.at(index); ++i ) {
                 tuple.push_back(i);
@@ -673,8 +645,7 @@ class VarSet {
     }
 
     template<typename Func, typename ...Ts>
-    void enumerate_vars(Func foo, //void foo(const VarSet &varset, const std::vector<int> &tuple),
-                        const Ts... args) const {
+    void enumerate_vars(Func foo, const Ts... args) const {
         std::vector<int> tuple;
         enumerate_vars_helper(tuple, foo, args...);
         assert(tuple.empty());
@@ -712,34 +683,6 @@ class VarSet {
         enumerate_vars_from_multipliers(foo);
     }
 };
-
-#if 0 // DEPRECATED
-template<>
-inline void VarSet::enumerate_vars(SAT::Theory &theory,
-                                   std::vector<int> &tuple,
-                                   void foo(SAT::Theory &theory, const VarSet &varset, const std::vector<int> &tuple)) const {
-    //std::cout << __PRETTY_FUNCTION__ << std::endl;
-#if 0 // DEPRECATED
-    std::string name = varname(tuple);
-    int var_index = theory.new_variable(name);
-    if( verbose_ > 1 ) {
-        std::cout << "create_var:"
-                  << " name=" << name
-                  << ", index=" << var_index
-                  << std::endl;
-    }
-    assert(var_index == (*this)(tuple));
-#endif
-    foo(theory, *this, tuple);
-}
-
-template<>
-inline int VarSet::calculate_index(int i, int index) const {
-    //std::cout << __PRETTY_FUNCTION__ << std::endl;
-    assert(i == int(multipliers_.size()));
-    return index;
-}
-#endif
 
 }; // namespace SAT
 
