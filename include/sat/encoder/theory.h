@@ -113,7 +113,7 @@ class Theory {
     // default virtual function to decode model
     void decode_model_full(std::ostream &os) const {
         for( int var = 0; var < num_variables(); ++var ) {
-            if( model_[var] )
+            if( model_.at(var) )
                 os << get_literal_by_index(1 + var) << std::endl;
         }
     }
@@ -450,7 +450,7 @@ class Theory {
                 if( lit == 0 ) break;
                 var = lit > 0 ? lit - 1 : -lit - 1;
                 assert(var == int(i));
-                model_[var] = lit > 0;
+                model_.at(var) = lit > 0;
             }
             if( lit != 0 ) {
                 is >> lit;
@@ -507,7 +507,7 @@ class Theory {
     }
     void print_model(std::ostream &os) const {
         for( size_t var = 0; var < model_.size(); ++var ) {
-            bool sign = model_[var];
+            bool sign = model_.at(var);
             if( sign ) {
                 assert(var < variables_.size());
                 variables_[var]->print(os);
