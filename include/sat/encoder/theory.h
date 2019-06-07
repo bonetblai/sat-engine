@@ -46,6 +46,10 @@ class Theory {
     std::vector<const Implication*> implications_;
     std::vector<std::pair<int, std::string> > imp_offsets_;
 
+    // soft clauses
+    int top_soft_implications_;
+    std::vector<std::pair<int, const Implication*> > soft_implications_;
+
     mutable bool satisfiable_;
     mutable std::vector<bool> model_;
 
@@ -65,12 +69,17 @@ class Theory {
             std::cout << "----------------- base implications -----------------" << std::endl;
             build_base();
             build_rest();
+            std::cout << "----------------- soft implications -----------------" << std::endl;
+            build_soft_theory();
             std::cout << "-----------------------------------------------------" << std::endl;
         }
     }
 
+    // empty default builder for soft theory
+    virtual void build_soft_theory() { }
+
   public:
-    Theory(bool decode) : decode_(decode) { }
+    Theory(bool decode) : decode_(decode), top_soft_implications_(0) { }
     virtual ~Theory() {
         clear_implications();
         clear_literals();
@@ -154,14 +163,32 @@ class Theory {
         implications_.clear();
     }
     void add_implication(const Implication *IP) {
-        implications_.push_back(IP);
+        implications_.emplace_back(IP);
     }
     int num_implications() const {
         return implications_.size();
     }
 
+    void clear_soft_implications() {
+        for( size_t i = 0; i < soft_implications_.size(); ++i )
+            delete soft_implications_[i].second;
+        soft_implications_.clear();
+        top_soft_implications_ = 0;
+    }
+    void add_soft_implication(int weight, const Implication *IP) {
+        assert(weight > 0);
+        soft_implications_.emplace_back(weight, IP);
+        top_soft_implications_ += weight;
+    }
+    int num_soft_implications() const {
+        return soft_implications_.size();
+    }
+    int top_soft_implications() const {
+        return top_soft_implications_;
+    }
+
     void add_comment(const std::string &comment) {
-        comments_.push_back(make_pair(implications_.size(), comment));
+        comments_.emplace_back(implications_.size(), comment);
     }
 
     bool satisfiable() const {
@@ -174,8 +201,8 @@ class Theory {
     void build_literal(int index) {
         assert(pos_literals_.size() == neg_literals_.size());
         assert((0 <= index) && (index < int(variables_.size())) && (index >= int(pos_literals_.size())));
-        pos_literals_.push_back(new Literal(*variables_[index], false));
-        neg_literals_.push_back(new Literal(*variables_[index], true));
+        pos_literals_.emplace_back(new Literal(*variables_[index], false));
+        neg_literals_.emplace_back(new Literal(*variables_[index], true));
     }
     void build_literals() {
         for( size_t i = 0; i < variables_.size(); ++i )
@@ -183,7 +210,7 @@ class Theory {
     }
     int new_variable(const std::string &name) {
         int index = variables_.size();
-        variables_.push_back(new Var(index, name));
+        variables_.emplace_back(new Var(index, name));
         varmap_.emplace(name, index);
         return index;
     }
@@ -193,7 +220,7 @@ class Theory {
         return index;
     }
     void push_new_vartype(const std::string &name) {
-        var_offsets_.push_back(std::make_pair(variables_.size(), name));
+        var_offsets_.emplace_back(variables_.size(), name);
     }
     int num_variables_in_last_block() const {
         assert(!var_offsets_.empty());
@@ -209,8 +236,8 @@ class Theory {
         // create new vars z1 and z2
         int z1 = new_literal(std::string("_") + prefix + "_z1");
         int z2 = new_literal(std::string("_") + prefix + "_z2");
-        z.push_back(z1);
-        z.push_back(z2);
+        z.emplace_back(z1);
+        z.emplace_back(z2);
 
         // top three clauses (required for at-least and equal)
         // x1 <= z2, y1 <= z2, x1 v y1 <= z1
@@ -269,10 +296,10 @@ class Theory {
             build_merge_network(prefix + "_rec" + std::to_string(m), m, x2, y2, z2);
             assert(int(z2.size()) == n);
 
-            z.push_back(z1[0]);
+            z.emplace_back(z1[0]);
             for( int i = 0; i < n - 1; ++i )
                 build_2_comparator(prefix + "_final_" + std::to_string(i) + "of" + std::to_string(n - 1), z2[i], z1[1 + i], z);
-            z.push_back(z2.back());
+            z.emplace_back(z2.back());
         }
     }
     void build_sorting_network(const std::string &prefix, int n, const std::vector<int> &x, std::vector<int> &z) {
@@ -304,7 +331,7 @@ class Theory {
             Implication *IP = new Implication;
             IP->add_consequent(-(1 + index));
             add_implication(IP);
-            x.push_back(index);
+            x.emplace_back(index);
         }
         assert(int(x.size()) == n);
 
@@ -454,19 +481,44 @@ class Theory {
     }
 
     // output
-    void dump(std::ostream &os) const {
-        os << "p cnf " << variables_.size() << " " << implications_.size() << std::endl;
+    void dump(std::ostream &os, bool weighted_max_sat = false) const {
+        if( !weighted_max_sat ) {
+            os << "p cnf"
+               << " " << variables_.size()
+               << " " << implications_.size()
+               << std::endl;
+        } else {
+            os << "p wcnf"
+               << " " << variables_.size()
+               << " " << implications_.size()
+               << " " << 1 + top_soft_implications_
+               << std::endl;
+        }
+
+        // dump (hard) implications and comments
         size_t i = 0;
         for( size_t j = 0; j < implications_.size(); ++j ) {
             while( (i < comments_.size()) && (comments_[i].first == int(j)) ) {
                 os << "c " << comments_[i].second << std::endl;
                 ++i;
             }
-            implications_[j]->dump(os);
+            if( !weighted_max_sat )
+                implications_[j]->dump(os);
+            else
+                implications_[j]->dump(os, 1 + top_soft_implications_);
         }
         while( i < comments_.size() ) {
             os << "c " << comments_[i].second << std::endl;
             ++i;
+        }
+
+        // dump soft clauses
+        if( weighted_max_sat ) {
+            os << "c soft clauses" << std::endl;
+            for( size_t j = 0; j < soft_implications_.size(); ++j ) {
+                int weight = soft_implications_[j].first;
+                soft_implications_[j].second->dump(os, weight);
+            }
         }
     }
     void print(std::ostream &os) const {
@@ -520,20 +572,20 @@ class VarSet {
     template<typename T, typename ...Ts>
     void fill_multipliers(const T &first, const Ts... args) {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
-        multipliers_.push_back(first.size());
+        multipliers_.emplace_back(first.size());
         fill_multipliers(args...);
     }
     template<typename T>
     void fill_multipliers(const T &first) {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
-        multipliers_.push_back(first.size());
+        multipliers_.emplace_back(first.size());
     }
 
     template<typename Func, typename T, typename ...Ts>
     void enumerate_vars_helper2(std::vector<int> &tuple, Func foo, const T &first, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         for( size_t i = 0; i < first.size(); ++i ) {
-            tuple.push_back(first[i]);
+            tuple.emplace_back(first[i]);
             enumerate_vars_helper(tuple, foo, args...);
             tuple.pop_back();
         }
@@ -597,7 +649,7 @@ class VarSet {
     void enumerate_vars_from_multipliers(std::vector<int> &tuple, Func foo, int index) const {
         if( index < int(multipliers_.size()) ) {
             for( size_t i = 0; i < multipliers_.at(index); ++i ) {
-                tuple.push_back(i);
+                tuple.emplace_back(i);
                 enumerate_vars_from_multipliers(tuple, foo, 1 + index);
                 tuple.pop_back();
             }

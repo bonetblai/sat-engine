@@ -89,16 +89,27 @@ class Implication {
     void add_antecedent(int L) { antecedent_.push_back(L); }
     void add_consequent(int L) { consequent_.push_back(L); }
 
-    void dump(std::ostream &os) const {
+    // weight = -1 is for standard (hard) clauses
+    void dump(std::ostream &os, int weight = -1) const {
+        assert((weight == -1) || (weight > 0));
+
+        // dump weight (if applies)
+        if( weight > 0 ) os << weight << " ";
+
+        // dump antecedent
         for( size_t i = 0; i < antecedent_.size(); ++i ) {
             os << -antecedent_[i];
             if( i + 1 < antecedent_.size() ) os << " ";
         }
+
+        // dump consequent
         if( !consequent_.empty() ) os << " ";
         for( size_t i = 0; i < consequent_.size(); ++i ) {
             os << consequent_[i];
             if( i + 1 < consequent_.size() ) os << " ";
         }
+
+        // dump end-of-clause
         os << " 0" << std::endl;
     }
     void print(std::ostream &os, const std::vector<const Literal*> &pos_literals, const std::vector<const Literal*> &neg_literals) const {
