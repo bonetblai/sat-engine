@@ -569,18 +569,6 @@ class VarSet {
     bool initialized_;
     int verbose_;
 
-    template<typename T, typename ...Ts>
-    void fill_multipliers(const T &first, const Ts... args) {
-        //std::cout << __PRETTY_FUNCTION__ << std::endl;
-        multipliers_.emplace_back(first.size());
-        fill_multipliers(args...);
-    }
-    template<typename T>
-    void fill_multipliers(const T &first) {
-        //std::cout << __PRETTY_FUNCTION__ << std::endl;
-        multipliers_.emplace_back(first.size());
-    }
-
     template<typename Func, typename T, typename ...Ts>
     void enumerate_vars_helper2(std::vector<int> &tuple, Func foo, const T &first, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
@@ -603,6 +591,7 @@ class VarSet {
         foo(*this, tuple);
     }
 
+#if 0
     template<typename ...Ts>
     void create_vars(SAT::Theory &theory, const Ts... args) const {
         theory.push_new_vartype(varname_);
@@ -618,6 +607,28 @@ class VarSet {
             assert(var_index == varset(tuple));
         };
         enumerate_vars(foo, args...);
+        if( verbose_ > 0 ) {
+            std::cout << varname_
+                      << ": #variables=" << theory.num_variables_in_last_block()
+                      << ", offset=" << theory.offset_of_last_block()
+                      << std::endl;
+        }
+    }
+#endif
+    void create_vars_from_multipliers(SAT::Theory &theory) const {
+        theory.push_new_vartype(varname_);
+        auto foo = [&theory](const VarSet &varset, const std::vector<int> &tuple) -> void {
+            std::string name = varset.varname(tuple);
+            int var_index = theory.new_variable(name);
+            if( varset.verbose() > 1 ) {
+                std::cout << "create_var:"
+                          << " name=" << name
+                          << ", index=" << var_index
+                          << std::endl;
+            }
+            assert(var_index == varset(tuple));
+        };
+        enumerate_vars_from_multipliers(foo);
         if( verbose_ > 0 ) {
             std::cout << varname_
                       << ": #variables=" << theory.num_variables_in_last_block()
@@ -688,12 +699,34 @@ class VarSet {
         verbose_ = verbose;
     }
 
+    template<typename T, typename ...Ts>
+    void fill_multipliers(const T &first, const Ts... args) {
+        //std::cout << __PRETTY_FUNCTION__ << std::endl;
+        multipliers_.emplace_back(first.size());
+        fill_multipliers(args...);
+    }
+    template<typename T>
+    void fill_multipliers(const T &first) {
+        //std::cout << __PRETTY_FUNCTION__ << std::endl;
+        multipliers_.emplace_back(first.size());
+    }
+
     template<typename ...Ts> void initialize(SAT::Theory &theory, const std::string &varname, Ts... args) {
         assert(!initialized_);
         base_ = theory.num_variables();
         varname_ = varname;
         fill_multipliers(args...);
+#if 0
         create_vars(theory, args...);
+#endif
+        create_vars_from_multipliers(theory);
+        initialized_ = true;
+    }
+    void initialize_from_multipliers(SAT::Theory &theory, const std::string &varname) {
+        assert(!initialized_);
+        base_ = theory.num_variables();
+        varname_ = varname;
+        create_vars_from_multipliers(theory);
         initialized_ = true;
     }
 
