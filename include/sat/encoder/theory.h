@@ -671,6 +671,10 @@ class VarSet {
 
   public:
     VarSet(int verbose = 1) : initialized_(false), verbose_(verbose) { }
+    template<typename ...Ts> VarSet(const Ts... args)
+      : initialized_(false), verbose_(false) {
+        fill_multipliers(args...);
+    }
     virtual ~VarSet() = default;
 
     int base() const {
