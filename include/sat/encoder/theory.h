@@ -100,11 +100,13 @@ class Theory {
         return l->as_str();
     }
 
-    // default virtual function to read (partial) model from text file
-    virtual int read_symbolic_model(std::istream &is) {
+    // default virtual function to read (partial) assignment from text file
+    virtual std::pair<int, int> read_assignment(std::istream &is) {
+        int num_lines = 0;
         int num_added_units = 0;
         std::string line;
         while( std::getline(is, line) ) {
+            ++num_lines;
             if( line.empty() || (line[0] == '#') ) continue;
             bool negated = line[0] == '-';
             int atom = get_atom_by_name(line);
@@ -116,7 +118,7 @@ class Theory {
             add_implication(IP);
             ++num_added_units;
         }
-        return num_added_units;
+        return std::make_pair(num_lines, num_added_units);
     }
 
     // default virtual function to decode model
