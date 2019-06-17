@@ -55,7 +55,7 @@ class Theory {
 
     std::set<std::string> at_most_k_constraints_;
     std::set<std::string> at_least_k_constraints_;
-    std::set<std::string> equal_k_constraints_;
+    std::set<std::string> exactly_k_constraints_;
 
     virtual void build_variables() = 0;
     virtual void build_base() = 0;
@@ -241,7 +241,7 @@ class Theory {
         z.emplace_back(z1);
         z.emplace_back(z2);
 
-        // top three clauses (required for at-least and equal)
+        // top three clauses (required for at-least and exactly)
         // x1 <= z2, y1 <= z2, x1 v y1 <= z1
         Implication *IP1 = new Implication;
         IP1->add_antecedent(1 + z2);
@@ -259,7 +259,7 @@ class Theory {
         IP3->add_consequent(1 + y1);
         add_implication(IP3);
 
-        // bottom three clauses (required for at-most and equal)
+        // bottom three clauses (required for at-most and exactly)
         // x1 => z1, y1 => z1, x1 & y1 => z2
         Implication *IP4 = new Implication;
         IP4->add_antecedent(1 + x1);
@@ -430,7 +430,7 @@ class Theory {
             add_implication(IP);
         }
     }
-    void build_formulas_for_equal_to_k(const std::string &prefix, const std::vector<int> &variables, int k) {
+    void build_formulas_for_exactly_k(const std::string &prefix, const std::vector<int> &variables, int k) {
         assert((0 <= k) && (k <= int(variables.size())));
 
         // trivial cases
@@ -444,8 +444,8 @@ class Theory {
         }
 
         // check that we have not already issued these constraints
-        if( (prefix != "") && (equal_k_constraints_.find(prefix) != equal_k_constraints_.end()) )
-            throw std::runtime_error(std::string("error: equal-k constraints for '") + prefix + "' already emited!");
+        if( (prefix != "") && (exactly_k_constraints_.find(prefix) != exactly_k_constraints_.end()) )
+            throw std::runtime_error(std::string("error: exactly-k constraints for '") + prefix + "' already emited!");
 
         std::vector<int> z;
         pad_and_build_sorting_network(prefix, variables, z);
