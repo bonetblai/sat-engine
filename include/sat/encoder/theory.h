@@ -78,128 +78,7 @@ class Theory {
     // empty default builder for soft theory
     virtual void build_soft_theory() { }
 
-  public:
-    Theory(bool decode) : decode_(decode), top_soft_implications_(0) { }
-    virtual ~Theory() {
-        clear_implications();
-        clear_literals();
-        clear_variables();
-    }
-
-    // get index of atom by name
-    int get_atom_by_name(const std::string &literal) const {
-        std::map<std::string, int>::const_iterator it = varmap_.find(literal[0] == '-' ? literal.substr(1) : literal);
-        return it == varmap_.end() ? -1 : it->second;
-    }
-
-    // get literal name (string) by literal index
-    std::string get_literal_by_index(int literal) const {
-        int index = literal > 0 ? literal - 1 : -literal - 1;
-        const Literal *l = literal > 0 ? pos_literals_.at(index) : neg_literals_.at(index);
-        assert(l != nullptr);
-        return l->as_str();
-    }
-
-    // default virtual function to read (partial) assignment from text file
-    virtual std::pair<int, int> read_assignment(std::istream &is) {
-        int num_lines = 0;
-        int num_added_units = 0;
-        std::string line;
-        while( std::getline(is, line) ) {
-            ++num_lines;
-            if( line.empty() || (line[0] == '#') ) continue;
-            bool negated = line[0] == '-';
-            int atom = get_atom_by_name(line);
-            if( atom == -1 ) throw std::runtime_error(std::string("inexistent atom '") + line + "'");
-            int literal = negated ? -(1 + atom) : (1 + atom);
-            //assert(line == get_literal_by_index(literal));
-            Implication *IP = new Implication;
-            IP->add_consequent(literal);
-            add_implication(IP);
-            ++num_added_units;
-        }
-        return std::make_pair(num_lines, num_added_units);
-    }
-
-    // default virtual function to decode model
-    void decode_model_full(std::ostream &os) const {
-        for( int var = 0; var < num_variables(); ++var ) {
-            if( model_.at(var) )
-                os << get_literal_by_index(1 + var) << std::endl;
-        }
-    }
-    virtual void decode_model(std::ostream &os) const {
-        decode_model_full(os);
-    }
-
-    const Var& variable(int index) const {
-        assert((0 <= index) && (index < int(variables_.size())));
-        return *variables_[index];
-    }
-    const Literal& literal(int index) const {
-        assert(index != 0);
-        assert((-int(variables_.size()) <= index) && (index <= int(variables_.size())));
-        return index > 0 ? *pos_literals_[index - 1] : *neg_literals_[-index - 1];
-    }
-
-    void clear_variables() {
-        for( size_t i = 0; i < variables_.size(); ++i )
-            delete variables_[i];
-        variables_.clear();
-    }
-    void clear_literals() {
-        for( size_t i = 0; i < pos_literals_.size(); ++i )
-            delete pos_literals_[i];
-        pos_literals_.clear();
-        for( size_t i = 0; i < neg_literals_.size(); ++i )
-            delete neg_literals_[i];
-        neg_literals_.clear();
-    }
-    int num_variables() const {
-        return variables_.size();
-    }
-
-    void clear_implications() {
-        for( size_t i = 0; i < implications_.size(); ++i )
-            delete implications_[i];
-        implications_.clear();
-    }
-    void add_implication(const Implication *IP) {
-        implications_.emplace_back(IP);
-    }
-    int num_implications() const {
-        return implications_.size();
-    }
-
-    void clear_soft_implications() {
-        for( size_t i = 0; i < soft_implications_.size(); ++i )
-            delete soft_implications_[i].second;
-        soft_implications_.clear();
-        top_soft_implications_ = 0;
-    }
-    void add_soft_implication(int weight, const Implication *IP) {
-        assert(weight > 0);
-        soft_implications_.emplace_back(weight, IP);
-        top_soft_implications_ += weight;
-    }
-    int num_soft_implications() const {
-        return soft_implications_.size();
-    }
-    int top_soft_implications() const {
-        return top_soft_implications_;
-    }
-
-    void add_comment(const std::string &comment) {
-        comments_.emplace_back(implications_.size(), comment);
-    }
-
-    bool satisfiable() const {
-        return satisfiable_;
-    }
-    const std::vector<bool>& model() const {
-        return model_;
-    }
-
+    // literals
     void build_literal(int index) {
         assert(pos_literals_.size() == neg_literals_.size());
         assert((0 <= index) && (index < int(variables_.size())) && (index >= int(pos_literals_.size())));
@@ -210,32 +89,11 @@ class Theory {
         for( size_t i = 0; i < variables_.size(); ++i )
             build_literal(i);
     }
-    int new_variable(const std::string &name) {
-        int index = variables_.size();
-        variables_.emplace_back(new Var(index, name));
-        varmap_.emplace(name, index);
-        return index;
-    }
-    int new_literal(const std::string &name) {
-        int index = new_variable(name);
-        build_literal(index);
-        return index;
-    }
-    void push_new_vartype(const std::string &name) {
-        var_offsets_.emplace_back(variables_.size(), name);
-    }
-    int num_variables_in_last_block() const {
-        assert(!var_offsets_.empty());
-        return variables_.size() - var_offsets_.back().first;
-    }
-    int offset_of_last_block() const {
-        assert(!var_offsets_.empty());
-        return var_offsets_.back().first;
-    }
 
     // support for pseudo boolean constraints
-    void build_2_comparator(const std::string &prefix, int x1, int y1, std::vector<int> &z) { // z1 = max(x1,y1), z2 = min(x1,y1)
-        // create new vars z1 and z2
+    void build_2_comparator(const std::string &prefix, int x1, int y1, std::vector<int> &z) {
+        // create new vars z1 and z2 where
+        // z1 = max(x1,y1), z2 = min(x1,y1)
         int z1 = new_literal(std::string("_") + prefix + "_z1");
         int z2 = new_literal(std::string("_") + prefix + "_z2");
         z.emplace_back(z1);
@@ -277,7 +135,12 @@ class Theory {
         IP6->add_consequent(1 + z2);
         add_implication(IP6);
     }
-    void build_merge_network(const std::string &prefix, int n, const std::vector<int> &x, const std::vector<int> &y, std::vector<int> &z) {
+
+    void build_merge_network(const std::string &prefix,
+                             int n,
+                             const std::vector<int> &x,
+                             const std::vector<int> &y,
+                             std::vector<int> &z) {
         assert((n == 1) || (n % 2 == 0));
         assert((int(x.size()) == n) && (int(y.size()) == n));
         if( n == 1 ) {
@@ -304,7 +167,10 @@ class Theory {
             z.emplace_back(z2.back());
         }
     }
-    void build_sorting_network(const std::string &prefix, int n, const std::vector<int> &x, std::vector<int> &z) {
+    void build_sorting_network(const std::string &prefix,
+                               int n,
+                               const std::vector<int> &x,
+                               std::vector<int> &z) {
         assert((n > 0) && (n % 2 == 0));
         assert(int(x.size()) == n);
         if( n == 2 ) {
@@ -320,7 +186,9 @@ class Theory {
             build_merge_network(prefix + "_merge" + std::to_string(m), m, z1, z2, z);
         }
     }
-    void pad_and_build_sorting_network(const std::string &prefix, const std::vector<int> &variables, std::vector<int> &z) {
+    void pad_and_build_sorting_network(const std::string &prefix,
+                                       const std::vector<int> &variables,
+                                       std::vector<int> &z) {
         assert(!variables.empty());
         int n = 1;
         while( n < int(variables.size()) )
@@ -341,7 +209,145 @@ class Theory {
         build_sorting_network(prefix + "_sort" + std::to_string(n), n, x, z);
     }
 
-    void build_formulas_for_at_most_k(const std::string &prefix, const std::vector<int> &variables, int k) {
+  public:
+    Theory(bool decode) : decode_(decode), top_soft_implications_(0) { }
+    virtual ~Theory() {
+        clear_implications();
+        clear_literals();
+        clear_variables();
+    }
+
+    // variables
+    int num_variables() const {
+        return variables_.size();
+    }
+    const Var& variable(int index) const {
+        assert((0 <= index) && (index < int(variables_.size())));
+        return *variables_[index];
+    }
+    void clear_variables() {
+        for( size_t i = 0; i < variables_.size(); ++i )
+            delete variables_[i];
+        variables_.clear();
+    }
+    int new_variable(const std::string &name) {
+        int index = variables_.size();
+        variables_.emplace_back(new Var(index, name));
+        varmap_.emplace(name, index);
+        return index;
+    }
+
+    // literals
+    const Literal& literal(int index) const {
+        assert(index != 0);
+        assert((-int(variables_.size()) <= index) && (index <= int(variables_.size())));
+        return index > 0 ? *pos_literals_[index - 1] : *neg_literals_[-index - 1];
+    }
+    void clear_literals() {
+        for( size_t i = 0; i < pos_literals_.size(); ++i )
+            delete pos_literals_[i];
+        pos_literals_.clear();
+        for( size_t i = 0; i < neg_literals_.size(); ++i )
+            delete neg_literals_[i];
+        neg_literals_.clear();
+    }
+    int new_literal(const std::string &name) {
+        int index = new_variable(name);
+        build_literal(index);
+        return index;
+    }
+
+    // vartypes and blocks
+    void push_new_vartype(const std::string &name) {
+        var_offsets_.emplace_back(variables_.size(), name);
+    }
+    int num_variables_in_last_block() const {
+        assert(!var_offsets_.empty());
+        return variables_.size() - var_offsets_.back().first;
+    }
+    int offset_of_last_block() const {
+        assert(!var_offsets_.empty());
+        return var_offsets_.back().first;
+    }
+
+    // (hard) implications
+    int num_implications() const {
+        return implications_.size();
+    }
+    const Implication* implication(int index) const {
+        return implications_.at(index);
+    }
+    void clear_implications() {
+        for( size_t i = 0; i < implications_.size(); ++i )
+            delete implications_[i];
+        implications_.clear();
+    }
+    void add_implication(const Implication *IP) {
+        implications_.emplace_back(IP);
+    }
+
+    // soft implications
+    int num_soft_implications() const {
+        return soft_implications_.size();
+    }
+    std::pair<int, const Implication*> soft_implication(int index) const {
+        return soft_implications_.at(index);
+    }
+    void clear_soft_implications() {
+        for( size_t i = 0; i < soft_implications_.size(); ++i )
+            delete soft_implications_[i].second;
+        soft_implications_.clear();
+        top_soft_implications_ = 0;
+    }
+    void add_soft_implication(int weight, const Implication *IP) {
+        assert(weight > 0);
+        soft_implications_.emplace_back(weight, IP);
+        top_soft_implications_ += weight;
+    }
+    int top_soft_implications() const {
+        return top_soft_implications_;
+    }
+
+    // comments, model, satisfiable?
+    void add_comment(const std::string &comment) {
+        comments_.emplace_back(implications_.size(), comment);
+    }
+    bool satisfiable() const {
+        return satisfiable_;
+    }
+    const std::vector<bool>& model() const {
+        return model_;
+    }
+
+    // get index of atom by name
+    int get_atom_by_name(const std::string &literal) const {
+        std::map<std::string, int>::const_iterator it = varmap_.find(literal[0] == '-' ? literal.substr(1) : literal);
+        return it == varmap_.end() ? -1 : it->second;
+    }
+
+    // get literal name (string) by literal index
+    std::string get_literal_by_index(int literal) const {
+        int index = literal > 0 ? literal - 1 : -literal - 1;
+        const Literal *l = literal > 0 ? pos_literals_.at(index) : neg_literals_.at(index);
+        assert(l != nullptr);
+        return l->as_str();
+    }
+
+    // default virtual function to decode model
+    void decode_model_full(std::ostream &os) const {
+        for( int var = 0; var < num_variables(); ++var ) {
+            if( model_.at(var) )
+                os << get_literal_by_index(1 + var) << std::endl;
+        }
+    }
+    virtual void decode_model(std::ostream &os) const {
+        decode_model_full(os);
+    }
+
+    // pseudo boolean constraints
+    void build_formulas_for_at_most_k(const std::string &prefix,
+                                      const std::vector<int> &variables,
+                                      int k) {
         // trivial cases
         if( k == 0 ) {
             for( int i = 0; i < int(variables.size()); ++i ) {
@@ -395,7 +401,10 @@ class Theory {
         IP->add_consequent(-(1 + z[k]));
         add_implication(IP);
     }
-    void build_formulas_for_at_least_k(const std::string &prefix, const std::vector<int> &variables, int k) {
+
+    void build_formulas_for_at_least_k(const std::string &prefix,
+                                       const std::vector<int> &variables,
+                                       int k) {
         assert((0 <= k) && (k <= int(variables.size())));
 
         // trivial cases
@@ -430,7 +439,10 @@ class Theory {
             add_implication(IP);
         }
     }
-    void build_formulas_for_exactly_k(const std::string &prefix, const std::vector<int> &variables, int k) {
+
+    void build_formulas_for_exactly_k(const std::string &prefix,
+                                      const std::vector<int> &variables,
+                                      int k) {
         assert((0 <= k) && (k <= int(variables.size())));
 
         // trivial cases
@@ -460,26 +472,86 @@ class Theory {
     }
 
     // readers
-    void read_minisat_output(std::ifstream &is) const {
+
+    // default virtual function to read (partial) assignment from text file
+    virtual std::pair<int, int> read_assignment(std::istream &is) {
+        int num_lines = 0;
+        int num_added_units = 0;
+        std::string line;
+        while( std::getline(is, line) ) {
+            ++num_lines;
+            if( line.empty() || (line[0] == '#') ) continue;
+            bool negated = line[0] == '-';
+            int atom = get_atom_by_name(line);
+            if( atom == -1 ) throw std::runtime_error(std::string("inexistent atom '") + line + "'");
+            int literal = negated ? -(1 + atom) : (1 + atom);
+            //assert(line == get_literal_by_index(literal));
+            Implication *IP = new Implication;
+            IP->add_consequent(literal);
+            add_implication(IP);
+            ++num_added_units;
+        }
+        return std::make_pair(num_lines, num_added_units);
+    }
+
+    void read_model_from_vector(const std::vector<int> &literals) const {
+        model_.clear();
+        model_ = std::vector<bool>(num_variables(), false);
+        for( size_t i = 0; i < literals.size(); ++i ) {
+            int lit = literals[i];
+            assert(lit != 0);
+            int var = lit > 0 ? lit - 1 : -lit - 1;
+            if( var < num_variables() ) model_.at(var) = lit > 0;
+        }
+    }
+
+    bool read_minisat_output(std::ifstream &is) const {
+        std::vector<int> literals;
+        satisfiable_ = read_minisat_output(is, literals);
+        read_model_from_vector(literals);
+        return satisfiable_;
+    }
+    bool read_minisat_output(std::ifstream &is, std::vector<int> &literals) const {
+        bool satisfiable = false;
         std::string status;
         is >> status;
-        satisfiable_ = status == "SAT";
-        if( satisfiable_ ) {
-            int var, lit;
-            model_ = std::vector<bool>(variables_.size(), false);
-            for( size_t i = 0; i < variables_.size(); ++i ) {
-                is >> lit;
+        satisfiable = status == "SAT";
+        if( satisfiable ) {
+            for( int lit; is >> lit; ) {
                 if( lit == 0 ) break;
-                var = lit > 0 ? lit - 1 : -lit - 1;
-                assert(var == int(i));
-                model_.at(var) = lit > 0;
+                literals.push_back(lit);
             }
-            // when decoding models, auxiliary variables may not be generated
-            // since the formulas are not built. Such variables are created
-            // when handling boolean constraints
-        } else {
-            model_.clear();
         }
+        return satisfiable;
+    }
+
+    bool read_competition_output(std::ifstream &is) const {
+        std::vector<int> literals;
+        satisfiable_ = read_competition_output(is, literals);
+        read_model_from_vector(literals);
+        return satisfiable_;
+    }
+    bool read_competition_output(std::ifstream &is, std::vector<int> &literals) const {
+        bool satisfiable = false;
+        for( std::string line; getline(is, line); ) {
+            std::istringstream iss(line);
+            char line_header;
+            iss >> line_header;
+            if( line_header == 's' ) {
+                // read status
+                std::string status;
+                iss >> status;
+                assert((status == "SATISFIABLE") || (status == "UNSATISFIABLE"));
+                satisfiable = status == "SATISFIABLE";
+            } else if( line_header == 'v' ) {
+                // read literals
+                for( int lit; iss >> lit; ) {
+                    if( lit == 0 ) break;
+                    literals.push_back(lit);
+                }
+            }
+        }
+        return satisfiable;
     }
 
     // output
