@@ -713,7 +713,7 @@ class VarSet {
 
     template<typename T, typename ...Ts> int calculate_index_helper(int i, int index, T &first, Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
-        assert(i < multipliers_.size());
+        assert(i < int(multipliers_.size()));
         assert((0 <= first) && (first < multipliers_.at(i)));
         int new_index = index * multipliers_.at(i) + first;
         return calculate_index(1 + i, new_index, args...);
@@ -733,7 +733,7 @@ class VarSet {
     template<typename Func>
     void enumerate_vars_from_multipliers(std::vector<int> &tuple, Func foo, int index) const {
         if( index < int(multipliers_.size()) ) {
-            for( size_t i = 0; i < multipliers_.at(index); ++i ) {
+            for( int i = 0; i < multipliers_.at(index); ++i ) {
                 tuple.emplace_back(i);
                 enumerate_vars_from_multipliers(tuple, foo, 1 + index);
                 tuple.pop_back();
