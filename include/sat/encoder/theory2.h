@@ -175,8 +175,8 @@ class Theory {
             for( int j = 1; j < m; j += 2 ) y2.push_back(y[j]);
             merge_network(prefix + "_rec2_" + std::to_string(n) + "_" + std::to_string(m), x2, y2, z2);
 
-            assert(x1.size() + x2.size() == n);
-            assert(y1.size() + y2.size() == m);
+            assert(int(x1.size() + x2.size()) == n);
+            assert(int(y1.size() + y2.size()) == m);
             assert(z1.size() == x1.size() + y1.size());
             assert(z2.size() == x2.size() + y2.size());
 
@@ -212,7 +212,7 @@ class Theory {
             std::vector<int> x2(&x[l], &x[n]), z2;
             sorting_network(prefix + "_rec2_" + std::to_string(n), x2, z2);
             assert(z2.size() == x2.size());
-            assert(n == x1.size() + x2.size());
+            assert(n == int(x1.size() + x2.size()));
             merge_network(prefix + "_merge", z1, z2, z);
             assert(z.size() == z1.size() + z2.size());
         }
@@ -345,7 +345,7 @@ class Theory {
     // get literal name (string) by literal index
     std::string get_literal_by_index(int literal) const {
         int var = lit_var(literal);
-        assert((var < pos_literals_.size()) && (var < neg_literals_.size()));
+        assert((var < int(pos_literals_.size())) && (var < int(neg_literals_.size())));
         const Literal *l = literal > 0 ? pos_literals_.at(var) : neg_literals_.at(var);
         assert(l != nullptr);
         return l->as_str();
@@ -412,7 +412,7 @@ class Theory {
             int m = 0;
             for( int n = literals.size(); n > 0; n = n >> 1, ++m );
             assert(((m == 0) && (literals.size() == 1)) ||
-                   ((m > 0) && ((1 << (m - 1)) <= literals.size()) && (literals.size() <= (1 << m))));
+                   ((m > 0) && ((1 << (m - 1)) <= int(literals.size())) && (int(literals.size()) <= (1 << m))));
 
             // new variables
             std::vector<int> new_vars(m, 0);
@@ -618,11 +618,11 @@ class Theory {
 
         std::vector<int> lex_vars;
         lex_ordering(prefix, lvectors, lex_vars);
-        assert(int(lex_vars.size()) == 2 * dim * lvectors.size());
+        assert(int(lex_vars.size()) == 2 * dim * int(lvectors.size()));
 
         int index = strict_order ? dim * lvectors.size() : 0;
         for( int k = 0; 1 + k < int(lvectors.size()); ++k ) {
-            assert(index + dim - 1 < lex_vars.size());
+            assert(index + dim - 1 < int(lex_vars.size()));
             Implication *IP = new Implication;
             IP->add_consequent(1 + lex_vars.at(index + dim - 1));
             add_implication(IP);
@@ -1019,13 +1019,13 @@ void Theory::lex_ordering(const std::string &prefix,
     VarSet Lex(lvectors_indices, dimension);
     std::string Lex_varname(std::string("Lex<") + prefix + ">");
     Lex.initialize_from_multipliers(*this, Lex_varname, false);
-    while( num_variables < variables_.size() )
+    while( num_variables < int(variables_.size()) )
         build_literal(num_variables++);
 
     VarSet SLex(lvectors_indices, dimension);
     std::string SLex_varname(std::string("SLex<") + prefix + ">");
     SLex.initialize_from_multipliers(*this, SLex_varname, false);
-    while( num_variables < variables_.size() )
+    while( num_variables < int(variables_.size()) )
         build_literal(num_variables++);
 
     // generate constraints that implement lex ordering
