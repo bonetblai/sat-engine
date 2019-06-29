@@ -79,7 +79,7 @@ class Theory {
         std::cout << "---------------- variables + literals ---------------" << std::endl;
         build_variables();
         build_literals();
-        if( !decode_ ) {
+        if( true || !decode_ ) {
             std::cout << "----------------- base implications -----------------" << std::endl;
             build_base();
             build_rest();
@@ -218,6 +218,10 @@ class Theory {
         }
     }
 
+    void lex_ordering(const std::string &prefix,
+                      const std::vector<std::vector<int> > &lvectors,
+                      std::vector<int> &lex_vars);
+
   public:
     Theory(bool decode, amo_encoding_t amo_encoding = amo_encoding_t::Heule)
       : decode_(decode),
@@ -341,6 +345,7 @@ class Theory {
     // get literal name (string) by literal index
     std::string get_literal_by_index(int literal) const {
         int var = lit_var(literal);
+        assert((var < pos_literals_.size()) && (var < neg_literals_.size()));
         const Literal *l = literal > 0 ? pos_literals_.at(var) : neg_literals_.at(var);
         assert(l != nullptr);
         return l->as_str();
@@ -406,7 +411,6 @@ class Theory {
         } else {
             int m = 0;
             for( int n = literals.size(); n > 0; n = n >> 1, ++m );
-            //std::cout << literals.size() << " " << m << std::endl;
             assert(((m == 0) && (literals.size() == 1)) ||
                    ((m > 0) && ((1 << (m - 1)) <= literals.size()) && (literals.size() <= (1 << m))));
 
@@ -595,6 +599,38 @@ class Theory {
             sorting_network_for_exactly_k(prefix, literals, k);
     }
 
+    // lexicographic orderings
+    void lex_ordering(const std::string &prefix, const std::vector<std::vector<int> > &lvectors, bool strict_order) {
+        int dim = 0;
+        if( lvectors.empty() ) {
+            throw std::runtime_error(std::string("error: empty lvector in lexicographic ordering for '") + prefix + "'");
+        } else {
+            dim = lvectors.at(0).size();
+            for( int i = 0; i < int(lvectors.size()); ++i ) {
+                if( dim != int(lvectors.at(i).size()) ) {
+                    throw std::runtime_error(std::string("error: mismatch in lvector dimension (lex for '") + prefix + "'):" +
+                                             "(dim[0]=" + std::to_string(dim) + ") != " +
+                                             "(dim[" + std::to_string(i) + "]=" + std::to_string(lvectors.at(i).size()) + ")");
+                }
+            }
+            if( dim == 0 ) throw std::runtime_error(std::string("error: null dimension in lexicographic ordering for '") + prefix + "'");
+        }
+
+        std::vector<int> lex_vars;
+        lex_ordering(prefix, lvectors, lex_vars);
+        assert(int(lex_vars.size()) == 2 * dim * lvectors.size());
+
+        int index = strict_order ? dim * lvectors.size() : 0;
+        for( int k = 0; 1 + k < int(lvectors.size()); ++k ) {
+            assert(index + dim - 1 < lex_vars.size());
+            Implication *IP = new Implication;
+            IP->add_consequent(1 + lex_vars.at(index + dim - 1));
+            add_implication(IP);
+            //std::cout << "OBLIGATION: " << get_literal_by_index(1 + lex_vars.at(index + dim - 1)) << std::endl;
+            index += dim;
+        }
+    }
+
     // readers
 
     // default virtual function to read (partial) assignment from text file
@@ -629,13 +665,13 @@ class Theory {
         }
     }
 
-    bool read_minisat_output(std::ifstream &is) const {
+    bool read_minisat_output(std::istream &is) const {
         std::vector<int> literals;
         satisfiable_ = read_minisat_output(is, literals);
         read_model_from_vector(literals);
         return satisfiable_;
     }
-    bool read_minisat_output(std::ifstream &is, std::vector<int> &literals) const {
+    bool read_minisat_output(std::istream &is, std::vector<int> &literals) const {
         bool satisfiable = false;
         std::string status;
         is >> status;
@@ -649,13 +685,13 @@ class Theory {
         return satisfiable;
     }
 
-    bool read_competition_output(std::ifstream &is) const {
+    bool read_competition_output(std::istream &is) const {
         std::vector<int> literals;
         satisfiable_ = read_competition_output(is, literals);
         read_model_from_vector(literals);
         return satisfiable_;
     }
-    bool read_competition_output(std::ifstream &is, std::vector<int> &literals) const {
+    bool read_competition_output(std::istream &is, std::vector<int> &literals) const {
         bool satisfiable = false;
         for( std::string line; getline(is, line); ) {
             std::istringstream iss(line);
@@ -813,8 +849,8 @@ class VarSet {
         }
     }
 #endif
-    void create_vars_from_multipliers(SAT::Theory &theory) const {
-        theory.push_new_vartype(varname_);
+    void create_vars_from_multipliers(SAT::Theory &theory, bool push_new_vartype) const {
+        if( push_new_vartype ) theory.push_new_vartype(varname_);
         auto foo = [&theory](const VarSet &varset, const std::vector<int> &tuple) -> void {
             std::string name = varset.varname(tuple);
             int var_index = theory.new_variable(name);
@@ -842,7 +878,7 @@ class VarSet {
         int new_index = index * multipliers_.at(i) + first;
         return calculate_index(1 + i, new_index, args...);
     }
-    
+
     int calculate_index(int i, int index) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         assert(i == int(multipliers_.size()));
@@ -918,14 +954,14 @@ class VarSet {
         base_ = theory.num_variables();
         varname_ = varname;
         fill_multipliers(args...);
-        create_vars_from_multipliers(theory);
+        create_vars_from_multipliers(theory, true);
         initialized_ = true;
     }
-    void initialize_from_multipliers(SAT::Theory &theory, const std::string &varname) {
+    void initialize_from_multipliers(SAT::Theory &theory, const std::string &varname, bool push_new_vartype = true) {
         assert(!initialized_);
         base_ = theory.num_variables();
         varname_ = varname;
-        create_vars_from_multipliers(theory);
+        create_vars_from_multipliers(theory, push_new_vartype);
         initialized_ = true;
     }
 
@@ -968,6 +1004,101 @@ class VarSet {
         enumerate_vars_from_multipliers(foo);
     }
 };
+
+void Theory::lex_ordering(const std::string &prefix,
+                          const std::vector<std::vector<int> > &lvectors,
+                          std::vector<int> &lex_vars) {
+
+    // create auxiliary variables
+    std::vector<int> lvectors_indices(lvectors.size());
+    std::iota(lvectors_indices.begin(), lvectors_indices.end(), 0);
+    std::vector<int> dimension(lvectors.at(0).size());
+    std::iota(dimension.begin(), dimension.end(), 0);
+
+    int num_variables = variables_.size();
+    VarSet Lex(lvectors_indices, dimension);
+    std::string Lex_varname(std::string("Lex<") + prefix + ">");
+    Lex.initialize_from_multipliers(*this, Lex_varname, false);
+    while( num_variables < variables_.size() )
+        build_literal(num_variables++);
+
+    VarSet SLex(lvectors_indices, dimension);
+    std::string SLex_varname(std::string("SLex<") + prefix + ">");
+    SLex.initialize_from_multipliers(*this, SLex_varname, false);
+    while( num_variables < variables_.size() )
+        build_literal(num_variables++);
+
+    // generate constraints that implement lex ordering
+    auto foo = [this, &Lex, &SLex, lvectors](const SAT::VarSet &varset, const std::vector<int> &tuple) -> void {
+        assert(tuple.size() == 2);
+        int k = tuple.at(0);
+        int j = tuple.at(1);
+        if( (j > 0) && (1 + k < int(lvectors.size())) ) {
+            // Lex(k,1+i) => Lex(k,i) & [ SLex(k,i) v -lit(k,1+i) v lit(1+k,1+i) ]
+            // Lex(k,1+i) => Lex(k,i)
+            Implication *IP1 = new Implication;
+            IP1->add_antecedent(1 + Lex(k, j));
+            IP1->add_consequent(1 + Lex(k, j - 1));
+            add_implication(IP1);
+
+            // Lex(k,1+i) => SLex(k,i) v -lit(k,1+i) v lit(1+k,1+i)
+            Implication *IP2 = new Implication;
+            IP2->add_antecedent(1 + Lex(k, j));
+            IP2->add_consequent(1 + SLex(k, j - 1));
+            IP2->add_consequent(-lvectors.at(k).at(j));
+            IP2->add_consequent(lvectors.at(1 + k).at(j));
+            add_implication(IP2);
+
+            // SLex(k,1+i) => Lex(k,i) & [ SLex(k,i) v -lit(k,1+i) ] & [ SLex(k,i) v lit(1+k,1+i) ]
+            // SLex(k,1+i) => Lex(k,i)
+            Implication *IP3 = new Implication;
+            IP3->add_antecedent(1 + SLex(k, j));
+            IP3->add_consequent(1 + Lex(k, j - 1));
+            add_implication(IP3);
+
+            // SLex(k,1+i) => SLex(k,i) v -lit(k,1+i)
+            Implication *IP4 = new Implication;
+            IP4->add_antecedent(1 + SLex(k, j));
+            IP4->add_consequent(1 + SLex(k, j - 1));
+            IP4->add_consequent(-lvectors.at(k).at(j));
+            add_implication(IP4);
+
+            // SLex(k,1+i) => SLex(k,i) v lit(1+k,1+i)
+            Implication *IP5 = new Implication;
+            IP5->add_antecedent(1 + SLex(k, j));
+            IP5->add_consequent(1 + SLex(k, j - 1));
+            IP5->add_consequent(lvectors.at(1 + k).at(j));
+            add_implication(IP5);
+        } else if( 1 + k < int(lvectors.size()) ) {
+            // Lex(k,0) => -lit(k,0) v lit(1+k,0)
+            Implication *IP1 = new Implication;
+            IP1->add_antecedent(1 + Lex(k, 0));
+            IP1->add_consequent(-lvectors.at(k).at(0));
+            IP1->add_consequent(lvectors.at(1 + k).at(0));
+            add_implication(IP1);
+
+            // SLex(k,0) => -lit(k,0)
+            Implication *IP2 = new Implication;
+            IP2->add_antecedent(1 + SLex(k, 0));
+            IP2->add_consequent(-lvectors.at(k).at(0));
+            add_implication(IP2);
+
+            // SLex(k,0) => lit(1+k,0)
+            Implication *IP3 = new Implication;
+            IP3->add_antecedent(1 + SLex(k, 0));
+            IP3->add_consequent(lvectors.at(1 + k).at(0));
+            add_implication(IP3);
+        }
+    };
+    Lex.enumerate_vars_from_multipliers(foo);
+
+    // fill output vars
+    auto bar = [&lex_vars](const VarSet &varset, const std::vector<int> &tuple) -> void {
+        lex_vars.push_back(varset(tuple));
+    };
+    Lex.enumerate_vars_from_multipliers(bar);
+    SLex.enumerate_vars_from_multipliers(bar);
+}
 
 }; // namespace SAT
 
