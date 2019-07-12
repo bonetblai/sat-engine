@@ -664,6 +664,12 @@ class Theory {
             if( var < num_variables() ) model_.at(var) = lit > 0;
         }
     }
+    void read_literals(std::istream &is, std::vector<int> &literals) const {
+        for( int lit; is >> lit; ) {
+            if( lit == 0 ) break;
+            literals.push_back(lit);
+        }
+    }
 
     bool read_minisat_output(std::istream &is) const {
         std::vector<int> literals;
@@ -675,27 +681,28 @@ class Theory {
         bool satisfiable = false;
         std::string status;
         is >> status;
-        if( (status == "SAT") || isdigit(*status.c_str()) || (*status.c_str() == '-') ) {
+        assert((status == "SAT") || (status == "UNSAT"));
+        if( status == "SAT" ) {
             satisfiable = true;
-            if( status != "SAT" ) {
-                int lit = atoi(status.c_str());
-                literals.push_back(lit);
-            }
-            for( int lit; is >> lit; ) {
-                if( lit == 0 ) break;
-                literals.push_back(lit);
-            }
+            read_literals(is, literals);
         }
         return satisfiable;
     }
-
-    bool read_competition_output(std::istream &is) const {
+    bool read_glucose_output(std::istream &is) const {
         std::vector<int> literals;
-        satisfiable_ = read_competition_output(is, literals);
+        read_literals(is, literals);
+        satisfiable_ = !literals.empty();
         read_model_from_vector(literals);
         return satisfiable_;
     }
-    bool read_competition_output(std::istream &is, std::vector<int> &literals) const {
+
+    bool read_other_output(std::istream &is) const {
+        std::vector<int> literals;
+        satisfiable_ = read_other_output(is, literals);
+        read_model_from_vector(literals);
+        return satisfiable_;
+    }
+    bool read_other_output(std::istream &is, std::vector<int> &literals) const {
         bool satisfiable = false;
         for( std::string line; getline(is, line); ) {
             std::istringstream iss(line);
