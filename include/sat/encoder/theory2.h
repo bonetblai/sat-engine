@@ -675,8 +675,12 @@ class Theory {
         bool satisfiable = false;
         std::string status;
         is >> status;
-        satisfiable = status == "SAT";
-        if( satisfiable ) {
+        if( (status == "SAT") || isdigit(*status.c_str()) || (*status.c_str() == '-') ) {
+            satisfiable = true;
+            if( status != "SAT" ) {
+                int lit = atoi(status.c_str());
+                literals.push_back(lit);
+            }
             for( int lit; is >> lit; ) {
                 if( lit == 0 ) break;
                 literals.push_back(lit);
