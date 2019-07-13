@@ -634,7 +634,7 @@ class Theory {
     // readers
 
     // default virtual function to read (partial) assignment from text file
-    virtual std::pair<int, int> read_assignment(std::istream &is) {
+    virtual std::pair<int, int> read_assignment(std::istream &is, bool silent_skip_inexistent_atoms = false) {
         int num_lines = 0;
         int num_added_units = 0;
         std::string line;
@@ -643,7 +643,12 @@ class Theory {
             if( line.empty() || (line[0] == '#') ) continue;
             bool negated = line[0] == '-';
             int atom = get_atom_by_name(line);
-            if( atom == -1 ) throw std::runtime_error(std::string("inexistent atom '") + line + "'");
+            if( atom == -1 ) {
+                if( !silent_skip_inexistent_atoms )
+                    throw std::runtime_error(std::string("inexistent literal '") + line + "'");
+                std::cout << "skipping inexistent literal '" + line + "'" << std::endl;
+                continue;
+            }
             int literal = negated ? -(1 + atom) : (1 + atom);
             //assert(line == get_literal_by_index(literal));
             Implication *IP = new Implication;
