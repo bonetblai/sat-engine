@@ -375,23 +375,14 @@ class Theory {
     //
     // #new-vars = 0, #new-clauses = O(n^2)
     void amo_quadratic(const std::string &prefix, const std::vector<int> &literals) {
-        if( literals.empty() ) {
-            empty_clause();
-        } else if( literals.size() == 1 ) {
-            assert(literals[0] != 0);
-            Implication *IP = new Implication;
-            IP->add_consequent(literals[0]);
-            add_implication(IP);
-        } else {
-            for( int i = 0; i < int(literals.size()); ++i ) {
-                assert(literals[i] != 0);
-                for( int j = 1 + i; j < int(literals.size()); ++j ) {
-                    assert(literals[j] != 0);
-                    Implication *IP = new Implication;
-                    IP->add_antecedent(literals[i]);
-                    IP->add_consequent(-literals[j]);
-                    add_implication(IP);
-                }
+        for( int i = 0; i < int(literals.size()); ++i ) {
+            assert(literals[i] != 0);
+            for( int j = 1 + i; j < int(literals.size()); ++j ) {
+                assert(literals[j] != 0);
+                Implication *IP = new Implication;
+                IP->add_antecedent(literals[i]);
+                IP->add_consequent(-literals[j]);
+                add_implication(IP);
             }
         }
     }
@@ -406,28 +397,24 @@ class Theory {
     //
     // #new-vars = O(log n), #new-clauses = O(nlog n)
     void amo_log(const std::string &prefix, const std::vector<int> &literals) {
-        if( literals.empty() ) {
-            empty_clause();
-        } else {
-            int m = 0;
-            for( int n = literals.size(); n > 0; n = n >> 1, ++m );
-            assert(((m == 0) && (literals.size() == 1)) ||
-                   ((m > 0) && ((1 << (m - 1)) <= int(literals.size())) && (int(literals.size()) <= (1 << m))));
+        int m = 0;
+        for( int n = literals.size(); n > 0; n = n >> 1, ++m );
+        assert(((m == 0) && (literals.size() == 1)) ||
+               ((m > 0) && ((1 << (m - 1)) <= int(literals.size())) && (int(literals.size()) <= (1 << m))));
 
-            // new variables
-            std::vector<int> new_vars(m, 0);
-            for( int j = 0; j < m; ++j )
-                new_vars[j] = new_literal(prefix + "_y" + std::to_string(j));
+        // new variables
+        std::vector<int> new_vars(m, 0);
+        for( int j = 0; j < m; ++j )
+            new_vars[j] = new_literal(prefix + "_y" + std::to_string(j));
 
-            // clauses
-            for( int i = 0; i < int(literals.size()); ++i ) {
-                for( int j = 0; j < m; ++j ) {
-                    int yj = 1 + new_vars[j];
-                    Implication *IP = new Implication;
-                    IP->add_antecedent(literals[i]);
-                    IP->add_consequent(i & (1 << j) ? yj : -yj);
-                    add_implication(IP);
-                }
+        // clauses
+        for( int i = 0; i < int(literals.size()); ++i ) {
+            for( int j = 0; j < m; ++j ) {
+                int yj = 1 + new_vars[j];
+                Implication *IP = new Implication;
+                IP->add_antecedent(literals[i]);
+                IP->add_consequent(i & (1 << j) ? yj : -yj);
+                add_implication(IP);
             }
         }
     }
