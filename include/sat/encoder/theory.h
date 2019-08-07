@@ -50,6 +50,12 @@ class Theory {
     const bool decode_;
     const amo_encoding_t amo_encoding_;
 
+    std::ostream *tunnel_;
+    bool weighted_max_sat_tunnel_;
+
+    int num_implications_;
+    int num_soft_implications_;
+
     std::vector<std::pair<int, std::string> > var_offsets_;
     std::vector<const Var*> variables_;
     std::vector<const Literal*> pos_literals_;
@@ -71,23 +77,9 @@ class Theory {
     std::set<std::string> at_least_k_constraints_;
     std::set<std::string> exactly_k_constraints_;
 
-    virtual void build_variables() = 0;
+    virtual void initialize_variables() = 0;
     virtual void build_base() = 0;
     virtual void build_rest() = 0;
-
-    void build_theory() {
-        std::cout << "---------------- variables + literals ---------------" << std::endl;
-        build_variables();
-        build_literals();
-        if( true || !decode_ ) {
-            std::cout << "----------------- base implications -----------------" << std::endl;
-            build_base();
-            build_rest();
-            std::cout << "----------------- soft implications -----------------" << std::endl;
-            build_soft_theory();
-            std::cout << "-----------------------------------------------------" << std::endl;
-        }
-    }
 
     // empty default builder for soft theory
     virtual void build_soft_theory() { }
@@ -226,12 +218,37 @@ class Theory {
     Theory(bool decode, amo_encoding_t amo_encoding = amo_encoding_t::Heule)
       : decode_(decode),
         amo_encoding_(amo_encoding),
+        tunnel_(nullptr),
+        weighted_max_sat_tunnel_(false),
+        num_implications_(0),
+        num_soft_implications_(0),
         top_soft_implications_(0) {
     }
     virtual ~Theory() {
         clear_implications();
+        clear_soft_implications();
         clear_literals();
         clear_variables();
+    }
+
+    void build_variables() {
+        std::cout << "---------------- variables + literals ---------------" << std::endl;
+        initialize_variables();
+        build_literals();
+    }
+    void build_theory() {
+        std::cout << "----------------- base implications -----------------" << std::endl;
+        build_base();
+        build_rest();
+        std::cout << "----------------- soft implications -----------------" << std::endl;
+        build_soft_theory();
+        std::cout << "-----------------------------------------------------" << std::endl;
+    }
+
+    // tunnel
+    void set_tunnel(std::ostream *tunnel, bool weighted_max_sat_tunnel = false) {
+        tunnel_ = tunnel;
+        weighted_max_sat_tunnel_ = weighted_max_sat_tunnel;
     }
 
     // variables
@@ -289,37 +306,65 @@ class Theory {
 
     // (hard) implications
     int num_implications() const {
-        return implications_.size();
+        return num_implications_;
     }
     const Implication* implication(int index) const {
         return implications_.at(index);
     }
     void clear_implications() {
-        for( size_t i = 0; i < implications_.size(); ++i )
+        assert(num_implications() == implications_.size());
+        for( size_t i = 0; i < num_implications(); ++i )
             delete implications_[i];
         implications_.clear();
+        num_implications_ = 0;
     }
     void add_implication(const Implication *IP) {
-        implications_.emplace_back(IP);
+        if( !decode_ ) {
+            if( tunnel_ == nullptr ) {
+                implications_.emplace_back(IP);
+            } else {
+                if( !weighted_max_sat_tunnel_ )
+                    IP->dump(*tunnel_);
+                else
+                    IP->dump(*tunnel_, 999);
+                delete IP;
+            }
+        } else {
+            delete IP;
+        }
+        ++num_implications_;
     }
 
     // soft implications
     int num_soft_implications() const {
-        return soft_implications_.size();
+        return num_soft_implications_;
     }
     std::pair<int, const Implication*> soft_implication(int index) const {
         return soft_implications_.at(index);
     }
     void clear_soft_implications() {
-        for( size_t i = 0; i < soft_implications_.size(); ++i )
+        assert(num_soft_implications() == soft_implications_.size());
+        for( size_t i = 0; i < num_soft_implications(); ++i )
             delete soft_implications_[i].second;
         soft_implications_.clear();
         top_soft_implications_ = 0;
+        num_soft_implications_ = 0;
     }
     void add_soft_implication(int weight, const Implication *IP) {
         assert(weight > 0);
-        soft_implications_.emplace_back(weight, IP);
+        if( !decode_ ) {
+            if( tunnel_ == nullptr ) {
+                soft_implications_.emplace_back(weight, IP);
+            } else {
+                assert(weighted_max_sat_tunnel_);
+                IP->dump(*tunnel_, weight);
+                delete IP;
+            }
+        } else {
+            delete IP;
+        }
         top_soft_implications_ += weight;
+        ++num_soft_implications_;
     }
     int top_soft_implications() const {
         return top_soft_implications_;
@@ -327,7 +372,12 @@ class Theory {
 
     // comments, model, satisfiable?
     void add_comment(const std::string &comment) {
-        comments_.emplace_back(implications_.size(), comment);
+        if( !decode_ ) {
+            if( tunnel_ == nullptr )
+                comments_.emplace_back(num_implications(), comment);
+            else
+                *tunnel_ << "c " << comment << std::endl;
+        }
     }
     bool satisfiable() const {
         return satisfiable_;
@@ -718,23 +768,26 @@ class Theory {
     }
 
     // output
-    void dump(std::ostream &os, bool weighted_max_sat = false) const {
+    std::string header(bool weighted_max_sat = false) const {
         if( !weighted_max_sat ) {
-            os << "p cnf"
-               << " " << variables_.size()
-               << " " << implications_.size()
-               << std::endl;
+            assert(num_soft_implications() == 0);
+            return std::string("p cnf") +
+              " " + std::to_string(num_variables()) +
+              " " + std::to_string(num_implications());
         } else {
-            os << "p wcnf"
-               << " " << variables_.size()
-               << " " << implications_.size()
-               << " " << 1 + top_soft_implications_
-               << std::endl;
+            return std::string("p wcnf") +
+              " " + std::to_string(num_variables()) +
+              " " + std::to_string(num_implications() + num_soft_implications()) +
+              " " + std::to_string(1 + top_soft_implications());
         }
+    }
+    void dump(std::ostream &os, bool weighted_max_sat = false) const {
+        // header
+        os << header(weighted_max_sat) << std::endl;
 
         // dump (hard) implications and comments
         size_t i = 0;
-        for( size_t j = 0; j < implications_.size(); ++j ) {
+        for( size_t j = 0; j < num_implications(); ++j ) {
             while( (i < comments_.size()) && (comments_[i].first == int(j)) ) {
                 os << "c " << comments_[i].second << std::endl;
                 ++i;
@@ -752,7 +805,7 @@ class Theory {
         // dump soft clauses
         if( weighted_max_sat ) {
             os << "c soft clauses" << std::endl;
-            for( size_t j = 0; j < soft_implications_.size(); ++j ) {
+            for( size_t j = 0; j < num_soft_implications(); ++j ) {
                 int weight = soft_implications_[j].first;
                 soft_implications_[j].second->dump(os, weight);
             }
@@ -760,7 +813,7 @@ class Theory {
     }
     void print(std::ostream &os) const {
         size_t i = 0;
-        for( size_t j = 0; j < implications_.size(); ++j ) {
+        for( size_t j = 0; j < num_implications(); ++j ) {
             while( (i < comments_.size()) && (comments_[i].first == int(j)) ) {
                 os << "% " << comments_[i].second << std::endl;
                 ++i;
