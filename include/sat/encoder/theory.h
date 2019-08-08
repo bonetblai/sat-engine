@@ -20,9 +20,11 @@
 #define THEORY_H
 
 #include <cassert>
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <map>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <stdexcept>
