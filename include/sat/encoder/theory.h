@@ -312,8 +312,7 @@ class Theory {
         return implications_.at(index);
     }
     void clear_implications() {
-        assert(num_implications() == implications_.size());
-        for( size_t i = 0; i < num_implications(); ++i )
+        for( size_t i = 0; i < implications_.size(); ++i )
             delete implications_[i];
         implications_.clear();
         num_implications_ = 0;
@@ -343,8 +342,7 @@ class Theory {
         return soft_implications_.at(index);
     }
     void clear_soft_implications() {
-        assert(num_soft_implications() == soft_implications_.size());
-        for( size_t i = 0; i < num_soft_implications(); ++i )
+        for( size_t i = 0; i < soft_implications_.size(); ++i )
             delete soft_implications_[i].second;
         soft_implications_.clear();
         top_soft_implications_ = 0;
@@ -787,8 +785,8 @@ class Theory {
 
         // dump (hard) implications and comments
         size_t i = 0;
-        for( size_t j = 0; j < num_implications(); ++j ) {
-            while( (i < comments_.size()) && (comments_[i].first == int(j)) ) {
+        for( int j = 0; j < num_implications(); ++j ) {
+            while( (i < comments_.size()) && (comments_[i].first == j) ) {
                 os << "c " << comments_[i].second << std::endl;
                 ++i;
             }
@@ -805,7 +803,7 @@ class Theory {
         // dump soft clauses
         if( weighted_max_sat ) {
             os << "c soft clauses" << std::endl;
-            for( size_t j = 0; j < num_soft_implications(); ++j ) {
+            for( int j = 0; j < num_soft_implications(); ++j ) {
                 int weight = soft_implications_[j].first;
                 soft_implications_[j].second->dump(os, weight);
             }
@@ -813,7 +811,7 @@ class Theory {
     }
     void print(std::ostream &os) const {
         size_t i = 0;
-        for( size_t j = 0; j < num_implications(); ++j ) {
+        for( int j = 0; j < num_implications(); ++j ) {
             while( (i < comments_.size()) && (comments_[i].first == int(j)) ) {
                 os << "% " << comments_[i].second << std::endl;
                 ++i;
