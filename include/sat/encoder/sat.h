@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2011 - <date> Blai Bonet, Universidad Simon Bolivar
+ *  Copyright (C) Blai Bonet
  *
  *  Permission is hereby granted to distribute this software for
  *  non-commercial research purposes, provided that this copyright

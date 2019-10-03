@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2011 - <date> Blai Bonet, Universidad Simon Bolivar
+ *  Copyright (C) Blai Bonet
  *
  *  Permission is hereby granted to distribute this software for
  *  non-commercial research purposes, provided that this copyright
@@ -653,7 +653,7 @@ class Theory {
             sorting_network_for_exactly_k(prefix, literals, k);
     }
 
-    // conditional high-level constraint
+    // conditional high-level constraints
     void conditional_at_least_1(const std::string &prefix, const std::vector<int> &body, const std::vector<int> &literals) {
         std::vector<int> _literals(literals);
         for( int i = 0; i < int(body.size()); ++i )
