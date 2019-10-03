@@ -418,77 +418,93 @@ class Theory {
     }
 
     // AMO: quadratic encoding for constraints of the form: x0 + x1 + ... + x(n-1) <= 1
+    //      conditioned on L1 & ... & Lk
     //
     // Clauses: for 0 <= i < j < n
     //
-    //   (1) -xi v -xj
+    //   (1) L1 & ... & Lk => -xi v -xj
     //
     // #new-vars = 0, #new-clauses = O(n^2)
-    void amo_quadratic(const std::string &prefix, const std::vector<int> &literals) {
+    void conditional_amo_quadratic(const std::string &prefix, const std::vector<int> &body, const std::vector<int> &literals) {
         for( int i = 0; i < int(literals.size()); ++i ) {
             assert(literals[i] != 0);
             for( int j = 1 + i; j < int(literals.size()); ++j ) {
                 assert(literals[j] != 0);
                 Implication *IP = new Implication;
-                IP->add_antecedent(literals[i]);
+                for( int k = 0; k < int(body.size()); ++k )
+                    IP->add_antecedent(body[k]);
+                IP->add_consequent(-literals[i]);
                 IP->add_consequent(-literals[j]);
                 add_implication(IP);
             }
         }
     }
+    void amo_quadratic(const std::string &prefix, const std::vector<int> &literals) {
+        conditional_amo_quadratic(prefix, { }, literals);
+    }
 
     // AMO: logarithmic encoding for constraints of the form: x0 + x1 + ... + x(n-1) <= 1
+    //      conditioned on L1 & ... & Lk
     //
     // Variables: y0, y1, ..., y(m-1) where m = ceil(log n)
     // Clauses: for 0 <= i < n, 0 <= j < m
     //
-    //    (1) -xi v yj    when j-th bit of i is 1
-    //    (2) -xi v -yj   otherwise
+    //    (1) L1 & ... & Lk => -xi v yj    when j-th bit of i is 1
+    //    (2) L1 & ... & Lk => -xi v -yj   otherwise
     //
     // #new-vars = O(log n), #new-clauses = O(nlog n)
-    void amo_log(const std::string &prefix, const std::vector<int> &literals) {
-        int m = 0;
-        for( int n = literals.size(); n > 0; n = n >> 1, ++m );
-        assert(((m == 0) && (literals.size() == 1)) ||
-               ((m > 0) && ((1 << (m - 1)) <= int(literals.size())) && (int(literals.size()) <= (1 << m))));
+    void conditional_amo_log(const std::string &prefix, const std::vector<int> &body, const std::vector<int> &literals) {
+        if( literals.size() > 1 ) {
+            int m = 0;
+            for( int n = literals.size(); n > 0; n = n >> 1, ++m );
+            assert((m > 0) && ((1 << (m - 1)) <= int(literals.size())) && (int(literals.size()) <= (1 << m)));
 
-        // new variables
-        std::vector<int> new_vars(m, 0);
-        for( int j = 0; j < m; ++j )
-            new_vars[j] = new_literal(prefix + "_y" + std::to_string(j));
+            // new variables
+            std::vector<int> new_vars(m, 0);
+            for( int j = 0; j < m; ++j )
+                new_vars[j] = new_literal(prefix + "_y" + std::to_string(j));
 
-        // clauses
-        for( int i = 0; i < int(literals.size()); ++i ) {
-            for( int j = 0; j < m; ++j ) {
-                int yj = 1 + new_vars[j];
-                Implication *IP = new Implication;
-                IP->add_antecedent(literals[i]);
-                IP->add_consequent(i & (1 << j) ? yj : -yj);
-                add_implication(IP);
+            // clauses
+            for( int i = 0; i < int(literals.size()); ++i ) {
+                for( int j = 0; j < m; ++j ) {
+                    int yj = 1 + new_vars[j];
+                    Implication *IP = new Implication;
+                    for( int k = 0; k < int(body.size()); ++k )
+                        IP->add_antecedent(body[k]);
+                    IP->add_consequent(-literals[i]);
+                    IP->add_consequent(i & (1 << j) ? yj : -yj);
+                    add_implication(IP);
+                }
             }
         }
     }
+    void amo_log(const std::string &prefix, const std::vector<int> &literals) {
+        conditional_amo_log(prefix, { }, literals);
+    }
 
     // AMO: Heule encoding for constraints of the form: x0 + x1 + ... + x(n-1) <= 1
+    //      conditioned on L1 & ... & Lk
     //
     // If n <= 3, switch to quadratic encoding
-    // If n > 3, create auxiliary variable y and encode the two
-    // AMO constraints:
+    // If n > 3, create auxiliary variable y and encode the two AMO constraints:
     //
-    //   (1) x0 + x1 + y <= 1  (solved with quadratic encoding)
-    //   (2) x2 + x3 + ... + x(n-1) + -y <= 1     (recursively)
+    //   (1) L1 & ... & Lk => x0 + x1 + y <= 1  (solved with quadratic encoding)
+    //   (2) L1 & ... & Lk => x2 + x3 + ... + x(n-1) + -y <= 1     (recursively)
     //
     // #new-vars = O(n), #new-clauses = O(n)
-    void amo_heule(const std::string &prefix, const std::vector<int> &literals) {
+    void conditional_amo_heule(const std::string &prefix, const std::vector<int> &body, const std::vector<int> &literals) {
         if( literals.size() < 4 ) {
-            amo_quadratic(prefix, literals);
+            conditional_amo_quadratic(prefix, body, literals);
         } else {
             int y = new_literal(prefix + "_n=" + std::to_string(literals.size()));
-            amo_quadratic("", {literals[0], literals[1], 1 + y});
+            conditional_amo_quadratic("", body, { literals[0], literals[1], 1 + y });
             std::vector<int> rest(&literals[2], &literals[literals.size()]);
             rest.push_back(-(1 + y));
-            amo_heule(prefix, rest);
+            conditional_amo_heule(prefix, body, rest);
         }
+    }
+    void amo_heule(const std::string &prefix, const std::vector<int> &literals) {
+        conditional_amo_heule(prefix, { }, literals);
     }
 
     // simple constraints high-level drivers
@@ -509,8 +525,8 @@ class Theory {
             throw std::runtime_error("error: unknown encoding of AMO constraints (value=" + std::to_string(int(amo_encoding_)) + "!");
     }
     void exactly_1(const std::string &prefix, const std::vector<int> &literals) {
-        at_least_1(prefix, literals);
-        at_most_1(prefix, literals);
+        at_least_1(prefix + "_at_least_1", literals);
+        at_most_1(prefix + "_at_most_1", literals);
     }
 
     // cardinality networks
@@ -634,6 +650,29 @@ class Theory {
             exactly_1(prefix, literals);
         else
             sorting_network_for_exactly_k(prefix, literals, k);
+    }
+
+    // conditional high-level constraint
+    void conditional_at_least_1(const std::string &prefix, const std::vector<int> &body, const std::vector<int> &literals) {
+        std::vector<int> _literals(literals);
+        for( int i = 0; i < int(body.size()); ++i )
+            _literals.push_back(-body[i]);
+        at_least_1(prefix, _literals);
+    }
+    void conditional_at_most_1(const std::string &prefix, const std::vector<int> &body, const std::vector<int> &literals) {
+        if( amo_encoding_ == amo_encoding_t::Quad ) {
+            conditional_amo_quadratic(prefix, body, literals);
+        } else if( amo_encoding_ == amo_encoding_t::Log ) {
+            conditional_amo_log(prefix, body, literals);
+        } else if( amo_encoding_ == amo_encoding_t::Heule ) {
+            conditional_amo_heule(prefix, body, literals);
+        } else {
+            throw std::runtime_error("error: unknown encoding of AMO constraints (value=" + std::to_string(int(amo_encoding_)) + "!");
+        }
+    }
+    void conditional_exactly_1(const std::string &prefix, const std::vector<int> &body, const std::vector<int> &literals) {
+        conditional_at_least_1(prefix + "_at_least_1", body, literals);
+        conditional_at_most_1(prefix + "_at_most_1", body, literals);
     }
 
     // lexicographic orderings
