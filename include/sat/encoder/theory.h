@@ -466,6 +466,7 @@ class Theory {
 
             // clauses
             for( int i = 0; i < int(literals.size()); ++i ) {
+                assert(literals[i] != 0);
                 for( int j = 0; j < m; ++j ) {
                     int yj = 1 + new_vars[j];
                     Implication *IP = new Implication;
