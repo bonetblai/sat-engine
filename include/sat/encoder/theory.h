@@ -402,7 +402,7 @@ class Theory {
     }
 
     // default virtual function to decode model
-    void decode_model_full(std::ostream &os) const {
+    virtual void decode_model_full(std::ostream &os) const {
         for( int var = 0; var < num_variables(); ++var ) {
             if( model_.at(var) )
                 os << get_literal_by_index(1 + var) << std::endl;
