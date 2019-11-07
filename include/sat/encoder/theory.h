@@ -321,6 +321,21 @@ class Theory {
         implications_.clear();
         num_implications_ = 0;
     }
+    void add_unit(int literal) {
+        if( !decode_ ) {
+            Implication IP;
+            IP.add_consequent(literal);
+            if( tunnel_ == nullptr ) {
+                implications_.emplace_back(new Implication(IP));
+            } else {
+                if( !weighted_max_sat_tunnel_ )
+                    IP.dump(*tunnel_);
+                else
+                    IP.dump(*tunnel_, DEFAULT_TOP_VALUE);
+            }
+        }
+        ++num_implications_;
+    }
     void add_implication(const Implication *IP) {
         if( !decode_ ) {
             if( tunnel_ == nullptr ) {
@@ -351,6 +366,20 @@ class Theory {
         soft_implications_.clear();
         top_soft_implications_ = 0;
         num_soft_implications_ = 0;
+    }
+    void add_soft_unit(int weight, int literal) {
+        if( !decode_ ) {
+            Implication IP;
+            IP.add_consequent(literal);
+            if( tunnel_ == nullptr ) {
+                soft_implications_.emplace_back(weight, new Implication(IP));
+            } else {
+                assert(weighted_max_sat_tunnel_);
+                IP.dump(*tunnel_, weight);
+            }
+        }
+        top_soft_implications_ += weight;
+        ++num_soft_implications_;
     }
     void add_soft_implication(int weight, const Implication *IP) {
         assert(weight > 0);
