@@ -32,6 +32,8 @@
 #include <vector>
 #include <sat/encoder/sat.h>
 
+#define DEFAULT_TOP_VALUE 999999      // default top value for partial max weighted SAT formula
+
 namespace SAT {
 
 int lit_var(int literal) {
@@ -327,7 +329,7 @@ class Theory {
                 if( !weighted_max_sat_tunnel_ )
                     IP->dump(*tunnel_);
                 else
-                    IP->dump(*tunnel_, 999);
+                    IP->dump(*tunnel_, DEFAULT_TOP_VALUE);
                 delete IP;
             }
         } else {
@@ -794,8 +796,8 @@ class Theory {
                 // read status
                 std::string status;
                 iss >> status;
-                assert((status == "SATISFIABLE") || (status == "UNSATISFIABLE"));
-                satisfiable = status == "SATISFIABLE";
+                assert((status == "SATISFIABLE") || (status == "UNSATISFIABLE") || (status == "OPTIMUM"));
+                satisfiable = (status == "SATISFIABLE") || (status == "OPTIMUM");
             } else if( line_header == 'v' ) {
                 // read literals
                 for( int lit; iss >> lit; ) {
@@ -835,7 +837,7 @@ class Theory {
             if( !weighted_max_sat )
                 implications_[j]->dump(os);
             else
-                implications_[j]->dump(os, 1 + top_soft_implications_);
+                implications_[j]->dump(os, 1 + top_soft_implications());
         }
         while( i < comments_.size() ) {
             os << "c " << comments_[i].second << std::endl;
@@ -977,12 +979,14 @@ class VarSet {
 
     int calculate_index(int i, int index) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
+        assert((0 <= i) && (0 <= index));
         assert(i == int(multipliers_.size()));
         return index;
     }
 
     template<typename ...Ts> int calculate_index(int i, int index, Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
+        assert((0 <= i) && (0 <= index));
         return calculate_index_helper(i, index, args...);
     }
 
@@ -1076,6 +1080,7 @@ class VarSet {
     }
 
     template<typename ...Ts> int operator()(Ts... args) const {
+        //std::cout << __PRETTY_FUNCTION__ << std::endl;
         return base_ + calculate_index(0, 0, args...);
     }
     int operator()(const std::vector<int> &tuple) const {
