@@ -444,7 +444,7 @@ class Theory {
     }
 
     // pseudo boolean constraints
-    void empty_clause() {
+    void add_empty_clause() {
         add_implication(new Implication);
     }
 
@@ -573,14 +573,11 @@ class Theory {
             add_implication(IP);
             return;
         } else if( k == int(literals.size()) ) {
-            for( int i = 0; i < int(literals.size()); ++i ) {
-                Implication *IP = new Implication;
-                IP->add_consequent(literals[i]);
-                add_implication(IP);
-            }
+            for( int i = 0; i < int(literals.size()); ++i )
+                add_unit(literals[i]);
             return;
         } else if( k > int(literals.size()) ) {
-            empty_clause();
+            add_empty_clause();
             return;
         }
 
@@ -592,20 +589,14 @@ class Theory {
         std::vector<int> z;
         sorting_network(prefix, literals, z);
         assert(z.size() == literals.size());
-        for( int i = 0; i < k; ++i ) {
-            Implication *IP = new Implication;
-            IP->add_consequent(1 + z.at(i));
-            add_implication(IP);
-        }
+        for( int i = 0; i < k; ++i )
+            add_unit(1 + z.at(i));
     }
     void sorting_network_for_at_most_k(const std::string &prefix, const std::vector<int> &literals, int k) {
         // special cases
         if( k == 0 ) {
-            for( int i = 0; i < int(literals.size()); ++i ) {
-                Implication *IP = new Implication;
-                IP->add_consequent(-literals[i]);
-                add_implication(IP);
-            }
+            for( int i = 0; i < int(literals.size()); ++i )
+                add_unit(-literals[i]);
             return;
         } else if( k == 1 ) {
             amo_heule(prefix + "_amo_heule", literals);
@@ -622,30 +613,21 @@ class Theory {
         std::vector<int> z;
         sorting_network(prefix, literals, z);
         assert(z.size() == literals.size());
-        for( int i = k; i < int(literals.size()); ++i ) {
-            Implication *IP = new Implication;
-            IP->add_consequent(-(1 + z.at(i)));
-            add_implication(IP);
-        }
+        for( int i = k; i < int(literals.size()); ++i )
+            add_unit(-(1 + z.at(i)));
     }
     void sorting_network_for_exactly_k(const std::string &prefix, const std::vector<int> &literals, int k) {
         // special cases
         if( k == 0 ) {
-            for( int i = 0; i < int(literals.size()); ++i ) {
-                Implication *IP = new Implication;
-                IP->add_consequent(-literals[i]);
-                add_implication(IP);
-            }
+            for( int i = 0; i < int(literals.size()); ++i )
+                add_unit(-literals[i]);
             return;
         } else if( k == int(literals.size()) ) {
-            for( int i = 0; i < int(literals.size()); ++i ) {
-                Implication *IP = new Implication;
-                IP->add_consequent(literals[i]);
-                add_implication(IP);
-            }
+            for( int i = 0; i < int(literals.size()); ++i )
+                add_unit(literals[i]);
             return;
         } else if( k > int(literals.size()) ) {
-            empty_clause();
+            add_empty_clause();
             return;
         }
 
@@ -657,11 +639,8 @@ class Theory {
         std::vector<int> z;
         sorting_network(prefix, literals, z);
         assert(z.size() == literals.size());
-        for( int i = 0; i < int(literals.size()); ++i ) {
-            Implication *IP = new Implication;
-            IP->add_consequent(i < k ? 1 + z.at(i) : -(1 + z.at(i)));
-            add_implication(IP);
-        }
+        for( int i = 0; i < int(literals.size()); ++i )
+            add_unit(i < k ? 1 + z.at(i) : -(1 + z.at(i)));
     }
 
     // cardinality networks: high-level driver
@@ -731,9 +710,7 @@ class Theory {
         int index = strict_order ? dim * lvectors.size() : 0;
         for( int k = 0; 1 + k < int(lvectors.size()); ++k ) {
             assert(index + dim - 1 < int(lex_vars.size()));
-            Implication *IP = new Implication;
-            IP->add_consequent(1 + lex_vars.at(index + dim - 1));
-            add_implication(IP);
+            add_unit(1 + lex_vars.at(index + dim - 1));
             //std::cout << "OBLIGATION: " << get_literal_by_index(1 + lex_vars.at(index + dim - 1)) << std::endl;
             index += dim;
         }
@@ -759,9 +736,7 @@ class Theory {
             }
             int literal = negated ? -(1 + atom) : (1 + atom);
             //assert(line == get_literal_by_index(literal));
-            Implication *IP = new Implication;
-            IP->add_consequent(literal);
-            add_implication(IP);
+            add_unit(literal);
             ++num_added_units;
         }
         return std::make_pair(num_lines, num_added_units);
