@@ -420,8 +420,10 @@ class Theory {
     // get index of atom by name (skip spaces and comments)
     int get_atom_by_name(const std::string &literal) const {
         std::string literal_copy = literal;
-        literal_copy.erase(std::remove(literal_copy.begin(), literal_copy.end(), ' '), literal_copy.end());
-        literal_copy.erase(literal_copy.find_first_of("#"), literal_copy.size());
+        if( literal_copy.find_first_of(" ") != std::string::npos )
+            literal_copy.erase(std::remove(literal_copy.begin(), literal_copy.end(), ' '), literal_copy.end());
+        if( literal_copy.find_first_of("#") != std::string::npos )
+            literal_copy.erase(literal_copy.find_first_of("#"), literal_copy.size());
         std::map<std::string, int>::const_iterator it = varmap_.find(literal_copy[0] == '-' ? literal_copy.substr(1) : literal_copy);
         return it == varmap_.end() ? -1 : it->second;
     }
