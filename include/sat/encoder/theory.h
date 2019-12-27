@@ -113,39 +113,15 @@ class Theory {
 
         // top three clauses (required for at-least and exactly)
         // x1 <= zmin, y1 <= zmin, x1 v y1 <= zmax
-        Implication *IP1 = new Implication;
-        IP1->add_antecedent(1 + zmin);
-        IP1->add_consequent(x1);
-        add_implication(IP1);
-
-        Implication *IP2 = new Implication;
-        IP2->add_antecedent(1 + zmin);
-        IP2->add_consequent(y1);
-        add_implication(IP2);
-
-        Implication *IP3 = new Implication;
-        IP3->add_antecedent(1 + zmax);
-        IP3->add_consequent(x1);
-        IP3->add_consequent(y1);
-        add_implication(IP3);
+        add_implication({ 1 + zmin }, { x1 });
+        add_implication({ 1 + zmin }, { y1 });
+        add_implication({ 1 + zmax }, { x1, y1 });
 
         // bottom three clauses (required for at-most and exactly)
         // x1 => zmax, y1 => zmax, x1 & y1 => zmin
-        Implication *IP4 = new Implication;
-        IP4->add_antecedent(x1);
-        IP4->add_consequent(1 + zmax);
-        add_implication(IP4);
-
-        Implication *IP5 = new Implication;
-        IP5->add_antecedent(y1);
-        IP5->add_consequent(1 + zmax);
-        add_implication(IP5);
-
-        Implication *IP6 = new Implication;
-        IP6->add_antecedent(x1);
-        IP6->add_antecedent(y1);
-        IP6->add_consequent(1 + zmin);
-        add_implication(IP6);
+        add_implication({ x1 }, { 1 + zmax });
+        add_implication({ y1 }, { 1 + zmax });
+        add_implication({ x1, y1 }, { 1 + zmin });
     }
 
     // merge sorted *variables* in x and y into z
@@ -321,10 +297,12 @@ class Theory {
         implications_.clear();
         num_implications_ = 0;
     }
-    void add_unit(int literal) {
+
+    void add_implication(std::vector<int> &&antecedent, std::vector<int> &&consequent) {
+        add_implication(Implication(std::move(antecedent), std::move(consequent)));
+    }
+    void add_implication(const Implication &IP) {
         if( !decode_ ) {
-            Implication IP;
-            IP.add_consequent(literal);
             if( tunnel_ == nullptr ) {
                 implications_.emplace_back(new Implication(IP));
             } else {
@@ -336,6 +314,10 @@ class Theory {
         }
         ++num_implications_;
     }
+    void add_unit(int literal) {
+        add_implication({ }, { literal });
+    }
+
     void add_implication(const Implication *IP) {
         if( !decode_ ) {
             if( tunnel_ == nullptr ) {
@@ -450,7 +432,7 @@ class Theory {
 
     // pseudo boolean constraints
     void add_empty_clause() {
-        add_implication(new Implication);
+        add_implication(Implication());
     }
 
     // AMO: quadratic encoding for constraints of the form: x0 + x1 + ... + x(n-1) <= 1
@@ -466,11 +448,9 @@ class Theory {
             assert(literals[i] != 0);
             for( int j = 1 + i; j < int(literals.size()); ++j ) {
                 assert(literals[j] != 0);
-                Implication *IP = new Implication;
+                Implication IP({ }, { -literals[i], -literals[i] });
                 for( int k = 0; k < int(body.size()); ++k )
-                    IP->add_antecedent(body[k]);
-                IP->add_consequent(-literals[i]);
-                IP->add_consequent(-literals[j]);
+                    IP.add_antecedent(body[k]);
                 add_implication(IP);
             }
         }
@@ -505,11 +485,9 @@ class Theory {
                 assert(literals[i] != 0);
                 for( int j = 0; j < m; ++j ) {
                     int yj = 1 + new_vars[j];
-                    Implication *IP = new Implication;
+                    Implication IP({ }, { -literals[i], i & (1 << j) ? yj : -yj });
                     for( int k = 0; k < int(body.size()); ++k )
-                        IP->add_antecedent(body[k]);
-                    IP->add_consequent(-literals[i]);
-                    IP->add_consequent(i & (1 << j) ? yj : -yj);
+                        IP.add_antecedent(body[k]);
                     add_implication(IP);
                 }
             }
@@ -546,9 +524,9 @@ class Theory {
 
     // simple constraints high-level drivers
     void at_least_1(const std::string &prefix, const std::vector<int> &literals) {
-        Implication *IP = new Implication;
+        Implication IP;
         for( int i = 0; i < int(literals.size()); ++i )
-            IP->add_consequent(literals[i]);
+            IP.add_consequent(literals[i]);
         add_implication(IP);
     }
     void at_most_1(const std::string &prefix, const std::vector<int> &literals) {
@@ -572,9 +550,9 @@ class Theory {
         if( k == 0 ) {
             return;
         } else if( k == 1 ) {
-            Implication *IP = new Implication;
+            Implication IP;
             for( size_t i = 0; i < literals.size(); ++i )
-                IP->add_consequent(literals[i]);
+                IP.add_consequent(literals[i]);
             add_implication(IP);
             return;
         } else if( k == int(literals.size()) ) {
@@ -1146,58 +1124,29 @@ void Theory::lex_ordering(const std::string &prefix,
         if( (j > 0) && (1 + k < int(lvectors.size())) ) {
             // Lex(k,1+i) => Lex(k,i) & [ SLex(k,i) v -lit(k,1+i) v lit(1+k,1+i) ]
             // Lex(k,1+i) => Lex(k,i)
-            Implication *IP1 = new Implication;
-            IP1->add_antecedent(1 + Lex(k, j));
-            IP1->add_consequent(1 + Lex(k, j - 1));
-            add_implication(IP1);
+            add_implication({ 1 + Lex(k, j) }, { 1 + Lex(k, j - 1) });
 
             // Lex(k,1+i) => SLex(k,i) v -lit(k,1+i) v lit(1+k,1+i)
-            Implication *IP2 = new Implication;
-            IP2->add_antecedent(1 + Lex(k, j));
-            IP2->add_consequent(1 + SLex(k, j - 1));
-            IP2->add_consequent(-lvectors.at(k).at(j));
-            IP2->add_consequent(lvectors.at(1 + k).at(j));
-            add_implication(IP2);
+            add_implication({ 1 + Lex(k, j) }, { 1 + SLex(k, j - 1), -lvectors.at(k).at(j), lvectors.at(1 + k).at(j) });
 
             // SLex(k,1+i) => Lex(k,i) & [ SLex(k,i) v -lit(k,1+i) ] & [ SLex(k,i) v lit(1+k,1+i) ]
             // SLex(k,1+i) => Lex(k,i)
-            Implication *IP3 = new Implication;
-            IP3->add_antecedent(1 + SLex(k, j));
-            IP3->add_consequent(1 + Lex(k, j - 1));
-            add_implication(IP3);
+            add_implication({ 1 + SLex(k, j) }, { 1 + Lex(k, j - 1) });
 
             // SLex(k,1+i) => SLex(k,i) v -lit(k,1+i)
-            Implication *IP4 = new Implication;
-            IP4->add_antecedent(1 + SLex(k, j));
-            IP4->add_consequent(1 + SLex(k, j - 1));
-            IP4->add_consequent(-lvectors.at(k).at(j));
-            add_implication(IP4);
+            add_implication({ 1 + SLex(k, j) }, { 1 + SLex(k, j - 1), -lvectors.at(k).at(j) });
 
             // SLex(k,1+i) => SLex(k,i) v lit(1+k,1+i)
-            Implication *IP5 = new Implication;
-            IP5->add_antecedent(1 + SLex(k, j));
-            IP5->add_consequent(1 + SLex(k, j - 1));
-            IP5->add_consequent(lvectors.at(1 + k).at(j));
-            add_implication(IP5);
+            add_implication({ 1 + SLex(k, j) }, { 1 + SLex(k, j - 1), lvectors.at(1 + k).at(j) });
         } else if( 1 + k < int(lvectors.size()) ) {
             // Lex(k,0) => -lit(k,0) v lit(1+k,0)
-            Implication *IP1 = new Implication;
-            IP1->add_antecedent(1 + Lex(k, 0));
-            IP1->add_consequent(-lvectors.at(k).at(0));
-            IP1->add_consequent(lvectors.at(1 + k).at(0));
-            add_implication(IP1);
+            add_implication({ 1 + Lex(k, 0) }, { -lvectors.at(k).at(0), lvectors.at(1 + k).at(0) });
 
             // SLex(k,0) => -lit(k,0)
-            Implication *IP2 = new Implication;
-            IP2->add_antecedent(1 + SLex(k, 0));
-            IP2->add_consequent(-lvectors.at(k).at(0));
-            add_implication(IP2);
+            add_implication({ 1 + SLex(k, 0) }, { -lvectors.at(k).at(0) });
 
             // SLex(k,0) => lit(1+k,0)
-            Implication *IP3 = new Implication;
-            IP3->add_antecedent(1 + SLex(k, 0));
-            IP3->add_consequent(lvectors.at(1 + k).at(0));
-            add_implication(IP3);
+            add_implication({ 1 + SLex(k, 0) }, { lvectors.at(1 + k).at(0) });
         }
     };
     Lex.enumerate_vars_from_multipliers(foo);
