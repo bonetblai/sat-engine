@@ -84,6 +84,15 @@ class Implication {
 
   public:
     Implication() { }
+    Implication(std::vector<int> &&antecedent, std::vector<int> &&consequent)
+      : antecedent_(std::move(antecedent)), consequent_(std::move(consequent)) {
+    }
+    Implication(Implication &&IP)
+      : antecedent_(std::move(IP.antecedent_)), consequent_(std::move(IP.consequent_)) {
+    }
+    Implication(const Implication &IP)
+      : antecedent_(IP.antecedent_), consequent_(IP.consequent_) {
+    }
     ~Implication() { }
 
     void add_antecedent(int L) { antecedent_.push_back(L); }
