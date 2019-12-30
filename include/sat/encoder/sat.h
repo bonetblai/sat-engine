@@ -95,6 +95,8 @@ class Implication {
     }
     ~Implication() { }
 
+    const std::vector<int>& antecedent() const { return antecedent_; }
+    const std::vector<int>& consequent() const { return consequent_; }
     void add_antecedent(int L) { antecedent_.push_back(L); }
     void add_consequent(int L) { consequent_.push_back(L); }
 
