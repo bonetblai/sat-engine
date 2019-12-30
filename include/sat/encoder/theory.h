@@ -49,23 +49,30 @@ int lit_sign(int literal) {
 class Theory {
   public:
     enum struct amo_encoding_t { Quad, Log, Heule };
+    enum struct replicas_t { None, All, ExcludePBC, Default };
 
   protected:
     const bool decode_;
     const amo_encoding_t amo_encoding_;
+    const replicas_t replicas_;
+    const replicas_t replicas_PBC_;
 
+    // tunnel
     std::ostream *tunnel_;
     bool weighted_max_sat_tunnel_;
 
+    // stats
     int num_implications_;
     int num_soft_implications_;
 
+    // variables and literals
     std::vector<std::pair<int, std::string> > var_offsets_;
     std::vector<const Var*> variables_;
     std::vector<const Literal*> pos_literals_;
     std::vector<const Literal*> neg_literals_;
     std::map<std::string, int> varmap_;
 
+    // theory with comments
     std::vector<std::pair<int, const std::string> > comments_;
     std::vector<const Implication*> implications_;
     std::vector<std::pair<int, std::string> > imp_offsets_;
@@ -74,12 +81,17 @@ class Theory {
     int top_soft_implications_;
     std::vector<std::pair<int, const Implication*> > soft_implications_;
 
+    // decoding
     mutable bool satisfiable_;
     mutable std::vector<bool> model_;
 
+    // pseudo boolean constraints
     std::set<std::string> at_most_k_constraints_;
     std::set<std::string> at_least_k_constraints_;
     std::set<std::string> exactly_k_constraints_;
+
+    // replicas
+    std::map<int, int> replicas_map_;
 
     virtual void initialize_variables() = 0;
     virtual void build_base() = 0;
@@ -113,15 +125,15 @@ class Theory {
 
         // top three clauses (required for at-least and exactly)
         // x1 <= zmin, y1 <= zmin, x1 v y1 <= zmax
-        add_implication({ 1 + zmin }, { x1 });
-        add_implication({ 1 + zmin }, { y1 });
-        add_implication({ 1 + zmax }, { x1, y1 });
+        add_implication({ 1 + zmin }, { x1 }, replicas_PBC_);
+        add_implication({ 1 + zmin }, { y1 }, replicas_PBC_);
+        add_implication({ 1 + zmax }, { x1, y1 }, replicas_PBC_);
 
         // bottom three clauses (required for at-most and exactly)
         // x1 => zmax, y1 => zmax, x1 & y1 => zmin
-        add_implication({ x1 }, { 1 + zmax });
-        add_implication({ y1 }, { 1 + zmax });
-        add_implication({ x1, y1 }, { 1 + zmin });
+        add_implication({ x1 }, { 1 + zmax }, replicas_PBC_);
+        add_implication({ y1 }, { 1 + zmax }, replicas_PBC_);
+        add_implication({ x1, y1 }, { 1 + zmin }, replicas_PBC_);
     }
 
     // merge sorted *variables* in x and y into z
@@ -194,10 +206,60 @@ class Theory {
                       const std::vector<std::vector<int> > &lvectors,
                       std::vector<int> &lex_vars);
 
+    // helper functions for easy implementation of replicas
+    void add_implication_HELPER(std::vector<int> &&antecedent, std::vector<int> &&consequent) {
+        add_implication_HELPER(Implication(std::move(antecedent), std::move(consequent)));
+    }
+    void add_implication_HELPER(const Implication &IP) {
+        if( !decode_ ) {
+            if( tunnel_ == nullptr ) {
+                implications_.emplace_back(new Implication(IP));
+            } else {
+                if( !weighted_max_sat_tunnel_ )
+                    IP.dump(*tunnel_);
+                else
+                    IP.dump(*tunnel_, DEFAULT_TOP_VALUE);
+            }
+        }
+        ++num_implications_;
+    }
+    void add_soft_implication_HELPER(int weight, const Implication &IP) {
+        assert(weight > 0);
+        if( !decode_ ) {
+            if( tunnel_ == nullptr ) {
+                soft_implications_.emplace_back(weight, new Implication(IP));
+            } else {
+                assert(weighted_max_sat_tunnel_);
+                IP.dump(*tunnel_, weight);
+            }
+        }
+        top_soft_implications_ += weight;
+        ++num_soft_implications_;
+    }
+
+    // replicas of literals
+    int get_replica(int literal) {
+        assert(literal != 0);
+        if( literal < 0 ) {
+            return -get_replica(-literal);
+        } else {
+            int var_index = literal - 1;
+            const Var &var = *variables_.at(var_index);
+            int rep_index = 0;
+            if( replicas_map_.count(var_index) > 0 )
+                rep_index = ++replicas_map_.at(var_index);
+            else
+                replicas_map_.emplace(var_index, 0);
+            return 1 + new_literal(var.str() + "_rep" + std::to_string(rep_index));
+        }
+    }
+
   public:
-    Theory(bool decode, amo_encoding_t amo_encoding = amo_encoding_t::Heule)
+    Theory(bool decode, amo_encoding_t amo_encoding = amo_encoding_t::Heule, replicas_t replicas = replicas_t::None)
       : decode_(decode),
         amo_encoding_(amo_encoding),
+        replicas_(replicas == replicas_t::Default ? replicas_t::None : replicas),
+        replicas_PBC_(replicas_ == replicas_t::All ? replicas_t::All : replicas_t::None),
         tunnel_(nullptr),
         weighted_max_sat_tunnel_(false),
         num_implications_(0),
@@ -284,6 +346,11 @@ class Theory {
         return var_offsets_.back().first;
     }
 
+    // empty clause
+    void add_empty_clause() {
+        add_implication(Implication());
+    }
+
     // (hard) implications
     int num_implications() const {
         return num_implications_;
@@ -298,26 +365,46 @@ class Theory {
         num_implications_ = 0;
     }
 
-    void add_implication(std::vector<int> &&antecedent, std::vector<int> &&consequent) {
-        add_implication(Implication(std::move(antecedent), std::move(consequent)));
+    void add_implication(std::vector<int> &&antecedent, std::vector<int> &&consequent, replicas_t replicas = replicas_t::Default) {
+        add_implication(Implication(std::move(antecedent), std::move(consequent)), replicas);
     }
-    void add_implication(const Implication &IP) {
-        if( !decode_ ) {
-            if( tunnel_ == nullptr ) {
-                implications_.emplace_back(new Implication(IP));
-            } else {
-                if( !weighted_max_sat_tunnel_ )
-                    IP.dump(*tunnel_);
-                else
-                    IP.dump(*tunnel_, DEFAULT_TOP_VALUE);
+    void add_implication(const Implication &IP, replicas_t replicas = replicas_t::Default) {
+        if( (replicas == replicas_t::None) || ((replicas == replicas_t::Default) && (replicas_ == replicas_t::None))  ) {
+            add_implication_HELPER(IP);
+        } else {
+            const std::vector<int> &antecedent = IP.antecedent();
+            const std::vector<int> &consequent = IP.consequent();
+
+            // create replica of IP
+            Implication RIP;
+            for( int i = 0; i < int(antecedent.size()); ++i ) {
+                int literal = antecedent.at(i);
+                int replica = get_replica(literal);
+                RIP.add_antecedent(replica);
+                assert((literal != 0) && (replica != 0));
+
+                // create linking clauses: literal <=> replica
+                add_implication_HELPER({ literal }, { replica });
+                add_implication_HELPER({ replica }, { literal });
             }
+            for( int i = 0; i < int(consequent.size()); ++i ) {
+                int literal = consequent.at(i);
+                int replica = get_replica(literal);
+                RIP.add_consequent(replica);
+                assert((literal != 0) && (replica != 0));
+
+                // create linking clauses: literal <=> replica
+                add_implication_HELPER({ literal }, { replica });
+                add_implication_HELPER({ replica }, { literal });
+            }
+            add_implication_HELPER(RIP);
         }
-        ++num_implications_;
     }
     void add_unit(int literal) {
         add_implication({ }, { literal });
     }
 
+    // deprecated: remove in future versions
     void add_implication(const Implication *IP) {
         if( !decode_ ) {
             if( tunnel_ == nullptr ) {
@@ -349,20 +436,50 @@ class Theory {
         top_soft_implications_ = 0;
         num_soft_implications_ = 0;
     }
-    void add_soft_unit(int weight, int literal) {
-        if( !decode_ ) {
-            Implication IP;
-            IP.add_consequent(literal);
-            if( tunnel_ == nullptr ) {
-                soft_implications_.emplace_back(weight, new Implication(IP));
-            } else {
-                assert(weighted_max_sat_tunnel_);
-                IP.dump(*tunnel_, weight);
-            }
-        }
-        top_soft_implications_ += weight;
-        ++num_soft_implications_;
+    int top_soft_implications() const {
+        return top_soft_implications_;
     }
+
+    void add_soft_implication(int weight, std::vector<int> &&antecedent, std::vector<int> &&consequent, replicas_t replicas = replicas_t::Default) {
+        add_soft_implication(weight, Implication(std::move(antecedent), std::move(consequent)), replicas);
+    }
+    void add_soft_implication(int weight, const Implication &IP, replicas_t replicas = replicas_t::Default) {
+        if( (replicas == replicas_t::None) || ((replicas == replicas_t::Default) && (replicas_ == replicas_t::None))  ) {
+            add_soft_implication_HELPER(weight, IP);
+        } else {
+            const std::vector<int> &antecedent = IP.antecedent();
+            const std::vector<int> &consequent = IP.consequent();
+
+            // create replica of IP
+            Implication RIP;
+            for( int i = 0; i < int(antecedent.size()); ++i ) {
+                int literal = antecedent.at(i);
+                int replica = get_replica(literal);
+                RIP.add_antecedent(replica);
+                assert((literal != 0) && (replica != 0));
+
+                // create linking clauses: literal <=> replica
+                add_implication_HELPER({ literal }, { replica });
+                add_implication_HELPER({ replica }, { literal });
+            }
+            for( int i = 0; i < int(consequent.size()); ++i ) {
+                int literal = consequent.at(i);
+                int replica = get_replica(literal);
+                RIP.add_consequent(replica);
+                assert((literal != 0) && (replica != 0));
+
+                // create linking clauses: literal <=> replica
+                add_implication_HELPER({ literal }, { replica });
+                add_implication_HELPER({ replica }, { literal });
+            }
+            add_soft_implication_HELPER(weight, RIP);
+        }
+    }
+    void add_soft_unit(int weight, int literal) {
+        add_soft_implication(weight, { }, { literal });
+    }
+
+    // deprecated: remove in future versions
     void add_soft_implication(int weight, const Implication *IP) {
         assert(weight > 0);
         if( !decode_ ) {
@@ -378,9 +495,6 @@ class Theory {
         }
         top_soft_implications_ += weight;
         ++num_soft_implications_;
-    }
-    int top_soft_implications() const {
-        return top_soft_implications_;
     }
 
     // comments, model, satisfiable?
@@ -431,9 +545,6 @@ class Theory {
     }
 
     // pseudo boolean constraints
-    void add_empty_clause() {
-        add_implication(Implication());
-    }
 
     // AMO: quadratic encoding for constraints of the form: x0 + x1 + ... + x(n-1) <= 1
     //      conditioned on L1 & ... & Lk
@@ -448,10 +559,10 @@ class Theory {
             assert(literals[i] != 0);
             for( int j = 1 + i; j < int(literals.size()); ++j ) {
                 assert(literals[j] != 0);
-                Implication IP({ }, { -literals[i], -literals[i] });
+                Implication IP({ }, { -literals[i], -literals[j] });
                 for( int k = 0; k < int(body.size()); ++k )
                     IP.add_antecedent(body[k]);
-                add_implication(IP);
+                add_implication(IP, replicas_PBC_);
             }
         }
     }
@@ -488,7 +599,7 @@ class Theory {
                     Implication IP({ }, { -literals[i], i & (1 << j) ? yj : -yj });
                     for( int k = 0; k < int(body.size()); ++k )
                         IP.add_antecedent(body[k]);
-                    add_implication(IP);
+                    add_implication(IP, replicas_PBC_);
                 }
             }
         }
@@ -527,7 +638,7 @@ class Theory {
         Implication IP;
         for( int i = 0; i < int(literals.size()); ++i )
             IP.add_consequent(literals[i]);
-        add_implication(IP);
+        add_implication(IP, replicas_PBC_);
     }
     void at_most_1(const std::string &prefix, const std::vector<int> &literals) {
         if( amo_encoding_ == amo_encoding_t::Quad )
@@ -553,7 +664,7 @@ class Theory {
             Implication IP;
             for( size_t i = 0; i < literals.size(); ++i )
                 IP.add_consequent(literals[i]);
-            add_implication(IP);
+            add_implication(IP, replicas_PBC_);
             return;
         } else if( k == int(literals.size()) ) {
             for( int i = 0; i < int(literals.size()); ++i )
@@ -1124,29 +1235,29 @@ void Theory::lex_ordering(const std::string &prefix,
         if( (j > 0) && (1 + k < int(lvectors.size())) ) {
             // Lex(k,1+i) => Lex(k,i) & [ SLex(k,i) v -lit(k,1+i) v lit(1+k,1+i) ]
             // Lex(k,1+i) => Lex(k,i)
-            add_implication({ 1 + Lex(k, j) }, { 1 + Lex(k, j - 1) });
+            add_implication({ 1 + Lex(k, j) }, { 1 + Lex(k, j - 1) }, replicas_PBC_);
 
             // Lex(k,1+i) => SLex(k,i) v -lit(k,1+i) v lit(1+k,1+i)
-            add_implication({ 1 + Lex(k, j) }, { 1 + SLex(k, j - 1), -lvectors.at(k).at(j), lvectors.at(1 + k).at(j) });
+            add_implication({ 1 + Lex(k, j) }, { 1 + SLex(k, j - 1), -lvectors.at(k).at(j), lvectors.at(1 + k).at(j) }, replicas_PBC_);
 
             // SLex(k,1+i) => Lex(k,i) & [ SLex(k,i) v -lit(k,1+i) ] & [ SLex(k,i) v lit(1+k,1+i) ]
             // SLex(k,1+i) => Lex(k,i)
-            add_implication({ 1 + SLex(k, j) }, { 1 + Lex(k, j - 1) });
+            add_implication({ 1 + SLex(k, j) }, { 1 + Lex(k, j - 1) }, replicas_PBC_);
 
             // SLex(k,1+i) => SLex(k,i) v -lit(k,1+i)
-            add_implication({ 1 + SLex(k, j) }, { 1 + SLex(k, j - 1), -lvectors.at(k).at(j) });
+            add_implication({ 1 + SLex(k, j) }, { 1 + SLex(k, j - 1), -lvectors.at(k).at(j) }, replicas_PBC_);
 
             // SLex(k,1+i) => SLex(k,i) v lit(1+k,1+i)
-            add_implication({ 1 + SLex(k, j) }, { 1 + SLex(k, j - 1), lvectors.at(1 + k).at(j) });
+            add_implication({ 1 + SLex(k, j) }, { 1 + SLex(k, j - 1), lvectors.at(1 + k).at(j) }, replicas_PBC_);
         } else if( 1 + k < int(lvectors.size()) ) {
             // Lex(k,0) => -lit(k,0) v lit(1+k,0)
-            add_implication({ 1 + Lex(k, 0) }, { -lvectors.at(k).at(0), lvectors.at(1 + k).at(0) });
+            add_implication({ 1 + Lex(k, 0) }, { -lvectors.at(k).at(0), lvectors.at(1 + k).at(0) }, replicas_PBC_);
 
             // SLex(k,0) => -lit(k,0)
-            add_implication({ 1 + SLex(k, 0) }, { -lvectors.at(k).at(0) });
+            add_implication({ 1 + SLex(k, 0) }, { -lvectors.at(k).at(0) }, replicas_PBC_);
 
             // SLex(k,0) => lit(1+k,0)
-            add_implication({ 1 + SLex(k, 0) }, { lvectors.at(1 + k).at(0) });
+            add_implication({ 1 + SLex(k, 0) }, { lvectors.at(1 + k).at(0) }, replicas_PBC_);
         }
     };
     Lex.enumerate_vars_from_multipliers(foo);
