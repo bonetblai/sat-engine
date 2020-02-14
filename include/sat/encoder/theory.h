@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <numeric>
 #include <set>
@@ -992,6 +993,10 @@ class Theory {
 };
 
 class VarSet {
+  public:
+    // foo(const VarSet &varset, const std::vector<int> &tuple) -> void
+    using TupleFunction = std::function<void (const VarSet&, const std::vector<int>&)>;
+
   protected:
     int base_;
     std::string varname_;
@@ -999,8 +1004,8 @@ class VarSet {
     bool initialized_;
     int verbose_;
 
-    template<typename Func, typename T, typename ...Ts>
-    void enumerate_vars_helper2(std::vector<int> &tuple, Func foo, const T &first, const Ts... args) const {
+    template<typename T, typename ...Ts>
+    void enumerate_vars_helper2(std::vector<int> &tuple, TupleFunction foo, const T &first, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         for( size_t i = 0; i < first.size(); ++i ) {
             tuple.emplace_back(first[i]);
@@ -1009,14 +1014,13 @@ class VarSet {
         }
     }
 
-    template<typename Func, typename ...Ts>
-    void enumerate_vars_helper(std::vector<int> &tuple, Func foo, const Ts... args) const {
+    template<typename ...Ts>
+    void enumerate_vars_helper(std::vector<int> &tuple, TupleFunction foo, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         enumerate_vars_helper2(tuple, foo, args...);
     }
 
-    template<typename Func>
-    void enumerate_vars_helper(std::vector<int> &tuple, Func foo) const {
+    void enumerate_vars_helper(std::vector<int> &tuple, TupleFunction foo) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         foo(*this, tuple);
     }
@@ -1088,8 +1092,7 @@ class VarSet {
         return calculate_index_helper(i, index, args...);
     }
 
-    template<typename Func>
-    void enumerate_vars_from_multipliers(std::vector<int> &tuple, Func foo, int index) const {
+    void enumerate_vars_from_multipliers(std::vector<int> &tuple, TupleFunction foo, int index) const {
         if( index < int(multipliers_.size()) ) {
             for( int i = 0; i < multipliers_.at(index); ++i ) {
                 tuple.emplace_back(i);
@@ -1163,15 +1166,14 @@ class VarSet {
         initialized_ = true;
     }
 
-    template<typename Func, typename ...Ts>
-    void enumerate_vars(Func foo, const Ts... args) const {
+    template<typename ...Ts>
+    void enumerate_vars(TupleFunction foo, const Ts... args) const {
         std::vector<int> tuple;
         enumerate_vars_helper(tuple, foo, args...);
         assert(tuple.empty());
     }
 
-    template<typename Func>
-    void enumerate_vars_from_multipliers(Func foo) const {
+    void enumerate_vars_from_multipliers(TupleFunction foo) const {
         std::vector<int> tuple;
         enumerate_vars_from_multipliers(tuple, foo, 0);
         assert(tuple.empty());
