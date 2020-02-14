@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <numeric>
 #include <set>
@@ -54,18 +55,22 @@ class Theory {
     const bool decode_;
     const amo_encoding_t amo_encoding_;
 
+    // tunnel
     std::ostream *tunnel_;
     bool weighted_max_sat_tunnel_;
 
+    // stats
     int num_implications_;
     int num_soft_implications_;
 
+    // variables and literals
     std::vector<std::pair<int, std::string> > var_offsets_;
     std::vector<const Var*> variables_;
     std::vector<const Literal*> pos_literals_;
     std::vector<const Literal*> neg_literals_;
     std::map<std::string, int> varmap_;
 
+    // theory with comments
     std::vector<std::pair<int, const std::string> > comments_;
     std::vector<const Implication*> implications_;
     std::vector<std::pair<int, std::string> > imp_offsets_;
@@ -74,9 +79,11 @@ class Theory {
     int top_soft_implications_;
     std::vector<std::pair<int, const Implication*> > soft_implications_;
 
+    // decoding
     mutable bool satisfiable_;
     mutable std::vector<bool> model_;
 
+    // pseudo boolean constraints
     std::set<std::string> at_most_k_constraints_;
     std::set<std::string> at_least_k_constraints_;
     std::set<std::string> exactly_k_constraints_;
@@ -284,6 +291,11 @@ class Theory {
         return var_offsets_.back().first;
     }
 
+    // empty clause
+    void add_empty_clause() {
+        add_implication(Implication());
+    }
+
     // (hard) implications
     int num_implications() const {
         return num_implications_;
@@ -318,6 +330,7 @@ class Theory {
         add_implication({ }, { literal });
     }
 
+    // deprecated: remove in future versions
     void add_implication(const Implication *IP) {
         if( !decode_ ) {
             if( tunnel_ == nullptr ) {
@@ -349,10 +362,16 @@ class Theory {
         top_soft_implications_ = 0;
         num_soft_implications_ = 0;
     }
-    void add_soft_unit(int weight, int literal) {
+    int top_soft_implications() const {
+        return top_soft_implications_;
+    }
+
+    void add_soft_implication(int weight, std::vector<int> &&antecedent, std::vector<int> &&consequent) {
+        add_soft_implication(weight, Implication(std::move(antecedent), std::move(consequent)));
+    }
+    void add_soft_implication(int weight, const Implication &IP) {
+        assert(weight > 0);
         if( !decode_ ) {
-            Implication IP;
-            IP.add_consequent(literal);
             if( tunnel_ == nullptr ) {
                 soft_implications_.emplace_back(weight, new Implication(IP));
             } else {
@@ -363,6 +382,11 @@ class Theory {
         top_soft_implications_ += weight;
         ++num_soft_implications_;
     }
+    void add_soft_unit(int weight, int literal) {
+        add_soft_implication(weight, { }, { literal });
+    }
+
+    // deprecated: remove in future versions
     void add_soft_implication(int weight, const Implication *IP) {
         assert(weight > 0);
         if( !decode_ ) {
@@ -378,9 +402,6 @@ class Theory {
         }
         top_soft_implications_ += weight;
         ++num_soft_implications_;
-    }
-    int top_soft_implications() const {
-        return top_soft_implications_;
     }
 
     // comments, model, satisfiable?
@@ -431,9 +452,6 @@ class Theory {
     }
 
     // pseudo boolean constraints
-    void add_empty_clause() {
-        add_implication(Implication());
-    }
 
     // AMO: quadratic encoding for constraints of the form: x0 + x1 + ... + x(n-1) <= 1
     //      conditioned on L1 & ... & Lk
@@ -448,7 +466,7 @@ class Theory {
             assert(literals[i] != 0);
             for( int j = 1 + i; j < int(literals.size()); ++j ) {
                 assert(literals[j] != 0);
-                Implication IP({ }, { -literals[i], -literals[i] });
+                Implication IP({ }, { -literals[i], -literals[j] });
                 for( int k = 0; k < int(body.size()); ++k )
                     IP.add_antecedent(body[k]);
                 add_implication(IP);
@@ -881,6 +899,10 @@ class Theory {
 };
 
 class VarSet {
+  public:
+    // foo(const VarSet &varset, const std::vector<int> &tuple) -> void
+    using TupleFunction = std::function<void (const VarSet&, const std::vector<int>&)>;
+
   protected:
     int base_;
     std::string varname_;
@@ -888,8 +910,8 @@ class VarSet {
     bool initialized_;
     int verbose_;
 
-    template<typename Func, typename T, typename ...Ts>
-    void enumerate_vars_helper2(std::vector<int> &tuple, Func foo, const T &first, const Ts... args) const {
+    template<typename T, typename ...Ts>
+    void enumerate_vars_helper2(std::vector<int> &tuple, TupleFunction foo, const T &first, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         for( size_t i = 0; i < first.size(); ++i ) {
             tuple.emplace_back(first[i]);
@@ -898,14 +920,13 @@ class VarSet {
         }
     }
 
-    template<typename Func, typename ...Ts>
-    void enumerate_vars_helper(std::vector<int> &tuple, Func foo, const Ts... args) const {
+    template<typename ...Ts>
+    void enumerate_vars_helper(std::vector<int> &tuple, TupleFunction foo, const Ts... args) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         enumerate_vars_helper2(tuple, foo, args...);
     }
 
-    template<typename Func>
-    void enumerate_vars_helper(std::vector<int> &tuple, Func foo) const {
+    void enumerate_vars_helper(std::vector<int> &tuple, TupleFunction foo) const {
         //std::cout << __PRETTY_FUNCTION__ << std::endl;
         foo(*this, tuple);
     }
@@ -977,8 +998,7 @@ class VarSet {
         return calculate_index_helper(i, index, args...);
     }
 
-    template<typename Func>
-    void enumerate_vars_from_multipliers(std::vector<int> &tuple, Func foo, int index) const {
+    void enumerate_vars_from_multipliers(std::vector<int> &tuple, TupleFunction foo, int index) const {
         if( index < int(multipliers_.size()) ) {
             for( int i = 0; i < multipliers_.at(index); ++i ) {
                 tuple.emplace_back(i);
@@ -1052,15 +1072,14 @@ class VarSet {
         initialized_ = true;
     }
 
-    template<typename Func, typename ...Ts>
-    void enumerate_vars(Func foo, const Ts... args) const {
+    template<typename ...Ts>
+    void enumerate_vars(TupleFunction foo, const Ts... args) const {
         std::vector<int> tuple;
         enumerate_vars_helper(tuple, foo, args...);
         assert(tuple.empty());
     }
 
-    template<typename Func>
-    void enumerate_vars_from_multipliers(Func foo) const {
+    void enumerate_vars_from_multipliers(TupleFunction foo) const {
         std::vector<int> tuple;
         enumerate_vars_from_multipliers(tuple, foo, 0);
         assert(tuple.empty());
